@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./verdikt-backend
+    container_name: verdikt-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://YOUR-SUPABASE-HOST:5432/postgres
+      SPRING_DATASOURCE_USERNAME: postgres.YOUR-REF
+      SPRING_DATASOURCE_PASSWORD: YOUR-PASSWORD
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    ports:
+      - "8080:8080"
+    networks:
+      - verdikt-network
+
+  frontend:
+    build: ./verdikt-frontend
+    container_name: verdikt-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - verdikt-network
+
+networks:
+  verdikt-network:
+    driver: bridge
