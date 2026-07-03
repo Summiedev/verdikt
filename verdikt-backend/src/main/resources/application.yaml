@@ -2,13 +2,13 @@ spring:
   application:
     name: verdikt-backend
   datasource:
-    url: jdbc:postgresql://localhost:5432/verdikt?useTimezone=true&serverTimezone=UTC
-    username: postgres
-    password: summie
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/verdikt?useTimezone=true&serverTimezone=UTC}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:summie}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
     show-sql: true
     properties:
       hibernate:
@@ -19,4 +19,4 @@ spring:
 
 
 app:
-  allowed-origins: http://localhost:5173,http://localhost:3000
+  allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
