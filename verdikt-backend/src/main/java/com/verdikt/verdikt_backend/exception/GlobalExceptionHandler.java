@@ -2,15 +2,20 @@ package com.verdikt.verdikt_backend.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(RoomNotFoundException.class)
@@ -55,11 +60,27 @@ public ResponseEntity<Map<String, Object>> handleRoomExpired(RoomExpiredExceptio
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        log.error("Illegal argument exception", ex);
         return buildResponse(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", ex.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrity(DataIntegrityViolationException ex) {
+        log.error("Database constraint violation", ex);
+        return buildResponse(HttpStatus.CONFLICT, "DATA_INTEGRITY_VIOLATION",
+                "Database constraint violation. Check server logs for the exact column or foreign key.");
+    }
+
+    @ExceptionHandler(TransactionSystemException.class)
+    public ResponseEntity<Map<String, Object>> handleTransaction(TransactionSystemException ex) {
+        log.error("Transaction failed", ex);
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "TRANSACTION_FAILED",
+                "Transaction failed. Check server logs for the exact cause.");
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
+        log.error("Unhandled exception", ex);
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
                 "Something went wrong. Please try again.");
     }

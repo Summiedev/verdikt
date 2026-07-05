@@ -48,7 +48,11 @@ private final WebSocketEventPublisher eventPublisher;
         .questionDurationSeconds(request.getQuestionDurationSeconds())
         .build();
 
+        log.debug("Creating room entity: code={} name={} voteMode={} questionDurationSeconds={}",
+                room.getCode(), room.getName(), room.getVoteMode(), room.getQuestionDurationSeconds());
         room = roomRepository.save(room);
+        log.debug("Room persisted: id={} code={} status={} voteMode={} hostPlayerId={}",
+                room.getId(), room.getCode(), room.getStatus(), room.getVoteMode(), room.getHostPlayerId());
 
         Player host = Player.builder()
         .room(room)
@@ -57,10 +61,13 @@ private final WebSocketEventPublisher eventPublisher;
         .isOriginalHost(true)
         .build();
 
+        log.debug("Creating host entity: roomId={} hostName={}", room.getId(), host.getName());
         host = playerRepository.save(host);
+        log.debug("Host persisted: id={} token={} roomId={}", host.getId(), host.getToken(), room.getId());
 
         room.setHostPlayerId(host.getId());
         roomRepository.save(room);
+        log.debug("Room host assigned: roomId={} hostPlayerId={}", room.getId(), room.getHostPlayerId());
 
         log.info("Room created: code={} name={} host={}", room.getCode(), room.getName(), host.getName());
 
