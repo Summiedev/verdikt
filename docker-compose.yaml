@@ -13,7 +13,7 @@ services:
     build: ./verdikt-frontend
     container_name: verdikt-frontend
     ports:
-      - "80:80"
+      - "3000:80"
     depends_on:
       - backend
     networks:
