@@ -146,11 +146,9 @@ for (const card of playerCards)
   }, [next, prev]);
 
   const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const didSwipe = useRef(false);
 
   function onTouchStart(e: React.TouchEvent) {
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    didSwipe.current = false;
   }
 
   function onTouchEnd(e: React.TouchEvent) {
@@ -159,31 +157,14 @@ for (const card of playerCards)
     const dy = e.changedTouches[0].clientY - touchStart.current.y;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
-    if (Math.max(absX, absY) > 40) {
-      didSwipe.current = true;
-      if (absY > absX) {
-        if (dx < 0) {
-          next();
-        } else {
-          prev();
-        }
+    if (absX > 40 && absX > absY) {
+      if (dx < 0) {
+        next();
       } else {
-        if (dx < 0) {
-          next();
-        } else {
-          prev();
-        }
+        prev();
       }
     }
     touchStart.current = null;
-  }
-
-  function onStageClick() {
-    if (didSwipe.current) {
-      didSwipe.current = false;
-      return;
-    }
-    next();
   }
 
   function handleDone() {
@@ -322,7 +303,6 @@ for (const card of playerCards)
 
       <div
         className="reportcard__stage"
-        onClick={onStageClick}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
@@ -359,7 +339,7 @@ for (const card of playerCards)
                 </div>
               )}
               <p className="reportcard__tap-hint">
-                tap or swipe to see results
+                swipe or use the arrows to move through results
               </p>
             </div>
           )}

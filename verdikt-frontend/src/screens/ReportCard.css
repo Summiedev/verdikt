@@ -61,8 +61,10 @@
   align-items: flex-start;
   justify-content: center;
   padding: 24px 24px 0;
-  cursor: pointer;
+  cursor: default;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .reportcard__slide-wrapper {

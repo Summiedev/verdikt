@@ -34,6 +34,7 @@ export default function Play() {
   const [lockedOrder, setLockedOrder] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedRef = useRef<Set<string>>(new Set());
+  const voteRequestSeqRef = useRef(0);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -89,6 +90,7 @@ export default function Play() {
 
       setPlayersMap(new Map(map));
       setSelected(myVotedFor);
+      selectedRef.current = myVotedFor;
       return myVotedFor;
     }
 
@@ -177,6 +179,7 @@ export default function Play() {
       };
       setQuestion(newQ);
       setSelected(new Set());
+      selectedRef.current = new Set();
       // reset votes but KEEP locked order (same players, new question)
       setPlayersMap((prev) => {
         const next = new Map(prev);
@@ -218,13 +221,6 @@ export default function Play() {
 
       return next;
     });
-
-    const myVotes = new Set(
-      incomingVotes
-        .filter((vote) => vote.voterId && vote.voterId === session?.playerId)
-        .map((vote) => String(vote.votedForId))
-    );
-    setSelected(myVotes.size > 0 ? myVotes : selectedRef.current);
   }, [session?.playerId]);
 
   const subscriptions = useMemo(
@@ -266,9 +262,10 @@ export default function Play() {
   async function castVote(playerId: string) {
     if (!session || !question) return;
     const questionId = question.id;
-    const previousSelection = new Set(selected);
-    const nextSelection = new Set(selected);
-    const wasSelected = selected.has(playerId);
+    const previousSelection = new Set(selectedRef.current);
+    const nextSelection = new Set(selectedRef.current);
+    const wasSelected = selectedRef.current.has(playerId);
+    const requestSeq = ++voteRequestSeqRef.current;
 
     if (wasSelected) {
       nextSelection.delete(playerId);
@@ -280,6 +277,7 @@ export default function Play() {
     }
 
     setSelected(nextSelection);
+    selectedRef.current = nextSelection;
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/votes`, {
@@ -288,8 +286,10 @@ export default function Play() {
         body: JSON.stringify({ questionId, votedForPlayerIds: Array.from(nextSelection) }),
       });
 
+      if (requestSeq !== voteRequestSeqRef.current) return;
       if (!res.ok) {
         setSelected(previousSelection);
+        selectedRef.current = previousSelection;
         return;
       }
 
@@ -299,7 +299,10 @@ export default function Play() {
         : [];
       applyVoteState(votes);
     } catch {
-      setSelected(previousSelection);
+      if (requestSeq === voteRequestSeqRef.current) {
+        setSelected(previousSelection);
+        selectedRef.current = previousSelection;
+      }
     }
   }
 
