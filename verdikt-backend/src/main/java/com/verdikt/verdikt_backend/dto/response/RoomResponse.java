@@ -17,6 +17,7 @@ public class RoomResponse {
     private RoomStatus status;
     private VoteMode voteMode;
     private int maxPlayers;
+    private Integer maxQuestions;
     private Integer questionDurationSeconds; // null = no timer
     private List<PlayerResponse> players;
     private UUID playerToken;

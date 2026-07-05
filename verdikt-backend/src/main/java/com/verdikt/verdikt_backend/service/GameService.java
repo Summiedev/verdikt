@@ -51,30 +51,7 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
         throw new InvalidRoomStateException("Game has already started or finished.");
     }
 
-    List<Question> finalQuestions = new ArrayList<>();
-
-    if (request != null && request.getSelectedQuestionIds() != null) {
-        for (UUID id : request.getSelectedQuestionIds()) {
-            questionRepository.findById(id).ifPresent(finalQuestions::add);
-        }
-    }
-
-    if (request != null && request.getCustomQuestionTexts() != null) {
-        for (String text : request.getCustomQuestionTexts()) {
-            if (text == null || text.trim().length() < 5) continue;
-            Question custom = Question.builder()
-                    .text(text.trim())
-                    .category("custom")
-                    .spiceLevel(SpiceLevel.MEDIUM)
-                    .isCustom(true)
-                    .build();
-            finalQuestions.add(questionRepository.save(custom));
-        }
-    }
-
-    if (finalQuestions.isEmpty()) {
-        throw new IllegalStateException("Pick at least one question before starting.");
-    }
+    List<Question> finalQuestions = resolveQuestionsForGame(room, request);
 
     for (int i = 0; i < finalQuestions.size(); i++) {
         RoomQuestion rq = RoomQuestion.builder()
@@ -150,6 +127,9 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
 @Transactional(readOnly = true)
 public List<QuestionPreviewResponse> previewRandomQuestions(int count) {
     List<Question> questions = questionRepository.findRandomQuestions(count);
+    if (questions.isEmpty()) {
+        throw new NoQuestionsAvailableException("No built-in questions exist yet. Add your own questions to start.");
+    }
     return questions.stream()
             .map(q -> QuestionPreviewResponse.builder()
                     .id(q.getId())
@@ -205,5 +185,49 @@ public void endGameEarly(UUID roomId, UUID hostToken) {
             shuffled.set(j, temp);
         }
         return shuffled.subList(0, count);
+    }
+
+    private List<Question> resolveQuestionsForGame(Room room, StartGameRequest request) {
+        List<Question> finalQuestions = new ArrayList<>();
+
+        if (request != null && request.getSelectedQuestionIds() != null) {
+            for (UUID id : request.getSelectedQuestionIds()) {
+                questionRepository.findById(id).ifPresent(question -> addUnique(finalQuestions, question));
+            }
+        }
+
+        if (request != null && request.getCustomQuestionTexts() != null) {
+            for (String text : request.getCustomQuestionTexts()) {
+                if (text == null || text.trim().length() < 5) continue;
+                Question custom = Question.builder()
+                        .text(text.trim())
+                        .category("custom")
+                        .spiceLevel(SpiceLevel.MEDIUM)
+                        .isCustom(true)
+                        .build();
+                addUnique(finalQuestions, questionRepository.save(custom));
+            }
+        }
+
+        if (!finalQuestions.isEmpty()) {
+            return finalQuestions;
+        }
+
+        int desiredCount = room.getMaxQuestions() != null && room.getMaxQuestions() > 0
+                ? room.getMaxQuestions()
+                : DEFAULT_QUESTION_COUNT;
+        List<Question> randomQuestions = questionRepository.findRandomQuestions(desiredCount);
+        if (randomQuestions.isEmpty()) {
+            throw new NoQuestionsAvailableException("No built-in questions exist yet. Add your own questions to start.");
+        }
+        return randomQuestions;
+    }
+
+    private void addUnique(List<Question> target, Question candidate) {
+        if (candidate == null) return;
+        boolean alreadyAdded = target.stream().anyMatch(existing -> existing.getId().equals(candidate.getId()));
+        if (!alreadyAdded) {
+            target.add(candidate);
+        }
     }
 }

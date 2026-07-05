@@ -50,6 +50,12 @@ public ResponseEntity<Map<String, Object>> handleRoomExpired(RoomExpiredExceptio
         return buildResponse(HttpStatus.UNAUTHORIZED, "PLAYER_NOT_FOUND", ex.getMessage());
     }
 
+    @ExceptionHandler(NoQuestionsAvailableException.class)
+    public ResponseEntity<Map<String, Object>> handleNoQuestionsAvailable(NoQuestionsAvailableException ex) {
+        log.error("No questions available", ex);
+        return buildResponse(HttpStatus.NOT_FOUND, "NO_QUESTIONS_AVAILABLE", ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()

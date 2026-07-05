@@ -22,7 +22,10 @@ public class CreateRoomRequest {
     @NotNull(message = "Vote mode is required")
     private VoteMode voteMode;
 
-    // optional — null means no timer, host manually advances each question
+    @Min(value = 1, message = "Question count must be at least 1")
+    @Max(value = 50, message = "Question count can't exceed 50")
+    private Integer questionCount;
+
     @Min(value = 10, message = "Timer must be at least 10 seconds")
     @Max(value = 300, message = "Timer can't exceed 5 minutes")
     private Integer questionDurationSeconds;

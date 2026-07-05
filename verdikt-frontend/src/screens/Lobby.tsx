@@ -111,6 +111,11 @@ const [session] = useState(() => loadSession());
       );
       // FIX 2: check for expired on any fetch
       if (res.status === 410) { setRoomExpired(true); return; }
+      if (res.status === 404) {
+        setError('No built-in questions exist yet. Add your own questions to start.');
+        setQuestions([]);
+        return;
+      }
       if (!res.ok) throw new Error();
       const data = await res.json();
       setQuestions(data.map((q: PreviewQuestion) => ({ ...q, isCustom: false })));
@@ -155,7 +160,12 @@ const [session] = useState(() => loadSession());
           `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/preview-questions?count=${count}`,
           { headers: { 'X-Player-Token': session.playerToken } }
         );
-        if (res.status === 410) { setRoomExpired(true); return; }
+        if (res.status === 410) { setRoomExpired(true); setStarting(false); return; }
+        if (res.status === 404) {
+          setError('No built-in questions exist yet. Add your own questions to start.');
+          setStarting(false);
+          return;
+        }
         if (!res.ok) throw new Error("Couldn't load questions.");
         const data: PreviewQuestion[] = await res.json();
         selectedQuestionIds = data.map((q) => q.id);
@@ -173,11 +183,15 @@ const [session] = useState(() => loadSession());
         }
       );
       // FIX 2: catch expired on start too
-      if (res.status === 410) { setRoomExpired(true); return; }
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? "Couldn't start the game.");
-      }
+        if (res.status === 410) { setRoomExpired(true); setStarting(false); return; }
+        if (res.status === 404) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message ?? 'No built-in questions exist yet. Add your own questions to start.');
+        }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message ?? "Couldn't start the game.");
+        }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't start the game.");
       setStarting(false);

@@ -36,11 +36,16 @@ export default function GameSetup() {
         `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/preview-questions?count=15`,
         { headers: { 'X-Player-Token': session.playerToken } }
       );
+      if (res.status === 404) {
+        setError('No built-in questions exist yet. Add your own questions to start.');
+        setQuestions([]);
+        return;
+      }
       const data = await res.json();
       setQuestions(data.map((q: PreviewQuestion) => ({ ...q, isCustom: false })));
-    } catch {
-      setError("Couldn't load questions. Try again.");
-    } finally {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load questions. Try again.");
+      } finally {
       setLoading(false);
     }
   }
@@ -79,10 +84,14 @@ export default function GameSetup() {
           body: JSON.stringify({ selectedQuestionIds, customQuestionTexts }),
         }
       );
+      if (res.status === 404) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message ?? 'No built-in questions exist yet. Add your own questions to start.');
+      }
       if (!res.ok) throw new Error();
       navigate(`/play/${code}`);
-    } catch {
-      setError("Couldn't start the game. Try again.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't start the game. Try again.");
       setStarting(false);
     }
   }

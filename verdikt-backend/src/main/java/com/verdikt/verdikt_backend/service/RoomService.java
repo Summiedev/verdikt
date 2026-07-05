@@ -45,6 +45,7 @@ private final WebSocketEventPublisher eventPublisher;
         .name(sanitize(request.getName()))
         .voteMode(request.getVoteMode())
         .maxPlayers(MAX_PLAYERS)
+        .maxQuestions(request.getQuestionCount() != null ? request.getQuestionCount() : 10)
         .questionDurationSeconds(request.getQuestionDurationSeconds())
         .build();
 
@@ -177,6 +178,7 @@ private final WebSocketEventPublisher eventPublisher;
             .status(room.getStatus())
             .voteMode(room.getVoteMode())
             .maxPlayers(room.getMaxPlayers())
+            .maxQuestions(room.getMaxQuestions())
             .questionDurationSeconds(room.getQuestionDurationSeconds())
             .players(players.stream().map(this::toPlayerResponse).collect(Collectors.toList()))
             .playerToken(playerToken)

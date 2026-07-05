@@ -62,7 +62,7 @@ export default function CreateRoom() {
         roomName: data.name,
         voteMode: data.voteMode,
         questionDurationSeconds: data.questionDurationSeconds,
-        questionCount: questionCount,
+        questionCount: data.maxQuestions ?? questionCount,
       });
 
       navigate(`/lobby/${data.code}`);
