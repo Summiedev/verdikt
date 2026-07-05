@@ -52,11 +52,14 @@ const [session] = useState(() => loadSession());
         return r.json();
       })
       .then((data) => {
-        if (data) setPlayers(data.players ?? []);
+        if (!data) return;
+        setPlayers(data.players ?? []);
+        if (data.status === 'IN_PROGRESS') {
+          navigate(`/play/${code}`);
+        }
       })
       .catch(() => navigate('/'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [code, navigate, session]);
 
   // FIX 3 (perf): stable callbacks so useMemo subscriptions don't rebuild on every render
   const handlePlayerEvent = useCallback((payload: Record<string, unknown>) => {
@@ -192,6 +195,8 @@ const [session] = useState(() => loadSession());
           const err = await res.json().catch(() => ({}));
           throw new Error(err.message ?? "Couldn't start the game.");
         }
+
+        navigate(`/play/${code}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't start the game.");
       setStarting(false);

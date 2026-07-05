@@ -62,6 +62,10 @@ export default function Play() {
   useEffect(() => {
     if (!session) { navigate('/'); return; }
 
+    let cancelled = false;
+
+    const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
     async function hydrateVotes(currentMap: Map<string, PlayerResult>) {
       const vRes = await fetch(
         `${import.meta.env.VITE_API_URL}/api/rooms/${session!.roomId}/votes/current`,
@@ -94,16 +98,21 @@ export default function Play() {
       return myVotedFor;
     }
 
-    async function init() {
-      if (!session) return;
+    async function init(attempt = 0) {
+      if (!session || cancelled) return;
       try {
         // 1. current question
         const qRes = await fetch(
           `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/current-question`,
           { headers: { 'X-Player-Token': session.playerToken } }
         );
+        if (cancelled) return;
         if (qRes.status === 410) { setRoomExpired(true); return; }
-        if (!qRes.ok) throw new Error('failed to load question');
+        if (!qRes.ok) {
+          const err = new Error('failed to load question') as Error & { status?: number };
+          err.status = qRes.status;
+          throw err;
+        }
         const qData = await qRes.json();
         const q: Question = {
           id: qData.question?.questionId ?? qData.questionId ?? qData.id,
@@ -120,8 +129,13 @@ export default function Play() {
           `${import.meta.env.VITE_API_URL}/api/rooms/rejoin`,
           { headers: { 'X-Player-Token': session.playerToken } }
         );
+        if (cancelled) return;
         if (rRes.status === 410) { setRoomExpired(true); return; }
-        if (!rRes.ok) throw new Error('failed to rejoin');
+        if (!rRes.ok) {
+          const err = new Error('failed to rejoin') as Error & { status?: number };
+          err.status = rRes.status;
+          throw err;
+        }
         const roomData = await rRes.json();
         const basePlayers: PlayerResult[] = (roomData.players ?? []).map(
           (p: { id: string; name: string }) => ({ id: p.id, name: p.name, votes: 0, voters: [] })
@@ -143,14 +157,24 @@ export default function Play() {
           await hydrateVotes(freshMap);
         };
 
-      } catch {
+      } catch (error) {
+        if (cancelled) return;
+        const status = error instanceof Error ? (error as Error & { status?: number }).status : undefined;
+        if (attempt < 3 && (status === 400 || status === 404 || status === 503 || status === undefined)) {
+          await sleep(250 * (attempt + 1));
+          await init(attempt + 1);
+          return;
+        }
         setError('Lost connection. Refresh and rejoin.');
       }
     }
 
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void init();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, session]);
 
   // countdown tick
   useEffect(() => {

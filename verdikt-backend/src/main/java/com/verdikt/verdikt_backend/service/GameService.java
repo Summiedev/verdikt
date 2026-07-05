@@ -20,6 +20,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -68,7 +70,16 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
     room.setCurrentQuestionStartedAt(Instant.now());
     roomRepository.save(room);
 
-    eventPublisher.publishGameStarted(roomId);
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                eventPublisher.publishGameStarted(roomId);
+            }
+        });
+    } else {
+        eventPublisher.publishGameStarted(roomId);
+    }
 
     log.info("Game started: room={} questionCount={}", room.getCode(), finalQuestions.size());
 }
