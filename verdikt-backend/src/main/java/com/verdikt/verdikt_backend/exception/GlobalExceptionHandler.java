@@ -7,6 +7,7 @@ import org.springframework.transaction.TransactionSystemException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -76,6 +77,12 @@ public ResponseEntity<Map<String, Object>> handleRoomExpired(RoomExpiredExceptio
         log.error("Transaction failed", ex);
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "TRANSACTION_FAILED",
                 "Transaction failed. Check server logs for the exact cause.");
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResourceFound(NoResourceFoundException ex) {
+        log.error("No handler or resource found", ex);
+        return buildResponse(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
