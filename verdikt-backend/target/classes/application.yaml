@@ -19,7 +19,6 @@ spring:
 
 
 app:
-  app:
   allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,https://verdikt.online,https://www.verdikt.online}
 logging:
   level:
