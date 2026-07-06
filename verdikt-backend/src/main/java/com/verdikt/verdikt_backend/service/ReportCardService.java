@@ -43,7 +43,7 @@ public class ReportCardService {
         List<PollCardResponse> pollCards = buildPollCards(roomQuestions, allVotes, playerById, room.getVoteMode());
         Map<UUID, List<String>> titlesByPlayer = extractTitles(pollCards);
 
-        ReportCardOverviewResponse overview = buildOverview(room, players, allVotes, titlesByPlayer);
+        ReportCardOverviewResponse overview = buildOverview(room, players, roomQuestions, allVotes, titlesByPlayer);
         List<PlayerTitleCardResponse> playerCards = buildPlayerCards(players, allVotes, titlesByPlayer);
 
         log.info("Report card generated: room={} players={} questions={}",
@@ -126,6 +126,7 @@ public class ReportCardService {
     private ReportCardOverviewResponse buildOverview(
             Room room,
             List<Player> players,
+            List<RoomQuestion> roomQuestions,
             List<Vote> allVotes,
             Map<UUID, List<String>> titlesByPlayer
     ) {
