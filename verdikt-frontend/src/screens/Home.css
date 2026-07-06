@@ -7,8 +7,8 @@
   padding-left: clamp(18px, 3vw, 36px);
   padding-right: clamp(18px, 3vw, 36px);
   gap: 24px;
-  max-width: 1180px;
-  width: min(1180px, 100%);
+  max-width: 1320px;
+  width: min(calc(100vw - 32px), 1320px);
   background:
     radial-gradient(circle at top left, rgba(255, 209, 102, 0.22), transparent 34%),
     radial-gradient(circle at bottom right, rgba(255, 107, 91, 0.14), transparent 36%),
@@ -324,12 +324,12 @@
   .home {
     padding-top: 28px;
     padding-bottom: 32px;
-    gap: 28px;
+    gap: 32px;
   }
 
   .home__hero {
-    grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
-    gap: 28px;
+    grid-template-columns: minmax(0, 1.02fr) minmax(400px, 0.98fr);
+    gap: 32px;
   }
 
   .home__hero-copy {
@@ -346,11 +346,11 @@
   }
 
   .home__actions {
-    max-width: 360px;
+    max-width: 390px;
   }
 
   .home__feature-card {
-    padding: 24px;
+    padding: 28px;
   }
 }
 

@@ -43,6 +43,7 @@ export default function Play() {
   const [roomExpired, setRoomExpired] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const isHost = session?.isHost ?? false;
+  const selectionCacheKey = session ? `verdikt:vote-selection:${session.roomId}` : null;
 
   // keep a ref to the hydrate function so we can call it from WS reconnect
   const hydrateVotesRef = useRef<(() => Promise<void>) | null>(null);
@@ -50,6 +51,29 @@ export default function Play() {
   useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
+
+  function loadCachedSelection(questionId: string): Set<string> {
+    if (!selectionCacheKey) return new Set();
+    try {
+      const raw = sessionStorage.getItem(`${selectionCacheKey}:${questionId}`);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.filter((id): id is string => typeof id === 'string'));
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveCachedSelection(questionId: string, selection: Set<string>) {
+    if (!selectionCacheKey) return;
+    const key = `${selectionCacheKey}:${questionId}`;
+    if (selection.size === 0) {
+      sessionStorage.removeItem(key);
+      return;
+    }
+    sessionStorage.setItem(key, JSON.stringify(Array.from(selection)));
+  }
 
   // compute remaining time from startedAt so refreshes/late-joiners get correct countdown
   function computeTimeLeft(startedAt: string | undefined, durationSeconds: number | null): number | null {
@@ -66,7 +90,7 @@ export default function Play() {
 
     const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
-    async function hydrateVotes(currentMap: Map<string, PlayerResult>) {
+    async function hydrateVotes(currentMap: Map<string, PlayerResult>, currentQuestionId?: string) {
       const vRes = await fetch(
         `${import.meta.env.VITE_API_URL}/api/rooms/${session!.roomId}/votes/current`,
         { headers: { 'X-Player-Token': session!.playerToken } }
@@ -92,10 +116,16 @@ export default function Play() {
         if (v.voterId === session!.playerId) myVotedFor.add(v.votedForId);
       }
 
+      const cachedSelection = currentQuestionId ? loadCachedSelection(currentQuestionId) : new Set<string>();
+      const nextSelection =
+        session!.voteMode === 'ANONYMOUS' && cachedSelection.size > 0
+          ? cachedSelection
+          : myVotedFor;
+
       setPlayersMap(new Map(map));
-      setSelected(myVotedFor);
-      selectedRef.current = myVotedFor;
-      return myVotedFor;
+      setSelected(nextSelection);
+      selectedRef.current = nextSelection;
+      return nextSelection;
     }
 
     async function init(attempt = 0) {
@@ -148,19 +178,19 @@ export default function Play() {
         setLockedOrder(basePlayers.map((p) => p.id));
 
         // 3. hydrate existing votes
-        await hydrateVotes(baseMap);
+        await hydrateVotes(baseMap, q.id);
 
         // expose hydrateVotes for WS reconnect
         hydrateVotesRef.current = async () => {
           const freshMap = new Map<string, PlayerResult>();
           for (const p of basePlayers) freshMap.set(p.id, { id: p.id, name: p.name, votes: 0, voters: [] });
-          await hydrateVotes(freshMap);
+          await hydrateVotes(freshMap, q.id);
         };
 
       } catch (error) {
         if (cancelled) return;
         const status = error instanceof Error ? (error as Error & { status?: number }).status : undefined;
-        if (attempt < 3 && (status === 400 || status === 404 || status === 503 || status === undefined)) {
+        if (attempt < 3 && (status === 400 || status === 404 || status === 500 || status === 502 || status === 503 || status === 504 || status === undefined)) {
           await sleep(250 * (attempt + 1));
           await init(attempt + 1);
           return;
@@ -300,11 +330,14 @@ export default function Play() {
       setRemovingId(null);
     }
 
-    setSelected(nextSelection);
-    selectedRef.current = nextSelection;
+      setSelected(nextSelection);
+      selectedRef.current = nextSelection;
+      if (session.voteMode === 'ANONYMOUS') {
+        saveCachedSelection(questionId, nextSelection);
+      }
 
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/votes`, {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/votes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Player-Token': session.playerToken },
         body: JSON.stringify({ questionId, votedForPlayerIds: Array.from(nextSelection) }),
@@ -314,6 +347,9 @@ export default function Play() {
       if (!res.ok) {
         setSelected(previousSelection);
         selectedRef.current = previousSelection;
+        if (session.voteMode === 'ANONYMOUS') {
+          saveCachedSelection(questionId, previousSelection);
+        }
         return;
       }
 
@@ -326,6 +362,9 @@ export default function Play() {
       if (requestSeq === voteRequestSeqRef.current) {
         setSelected(previousSelection);
         selectedRef.current = previousSelection;
+        if (session.voteMode === 'ANONYMOUS') {
+          saveCachedSelection(questionId, previousSelection);
+        }
       }
     }
   }
