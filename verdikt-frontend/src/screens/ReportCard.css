@@ -56,6 +56,40 @@
 }
 .reportcard__quick-share:hover { background: rgba(255, 255, 255, 0.2); }
 
+.reportcard__exporting {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 10, 16, 0.7);
+  backdrop-filter: blur(10px);
+}
+
+.reportcard__exporting-card {
+  width: min(320px, calc(100vw - 32px));
+  padding: 20px 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+.reportcard__exporting-title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.reportcard__exporting-copy {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.5;
+}
+
 /* ── Stage ───────────────────────────────────────────────── */
 
 .reportcard__stage {

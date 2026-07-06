@@ -67,8 +67,122 @@ export default function ReportCard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedVoters, setExpandedVoters] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
 
   const voteMode = session?.voteMode ?? "ANONYMOUS";
+  const captureScale = Math.max(2, Math.ceil(window.devicePixelRatio || 2));
+
+  const waitForPaint = useCallback(
+    () => new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+    }),
+    [],
+  );
+
+  function crc32(bytes: Uint8Array) {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) {
+        c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      table[n] = c >>> 0;
+    }
+
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) {
+      crc = table[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function writeUint16LE(buffer: Uint8Array, offset: number, value: number) {
+    buffer[offset] = value & 0xff;
+    buffer[offset + 1] = (value >>> 8) & 0xff;
+  }
+
+  function writeUint32LE(buffer: Uint8Array, offset: number, value: number) {
+    buffer[offset] = value & 0xff;
+    buffer[offset + 1] = (value >>> 8) & 0xff;
+    buffer[offset + 2] = (value >>> 16) & 0xff;
+    buffer[offset + 3] = (value >>> 24) & 0xff;
+  }
+
+  function concatBytes(chunks: Uint8Array[]) {
+    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return merged;
+  }
+
+  function buildZip(files: { name: string; data: Uint8Array }[]) {
+    const localParts: Uint8Array[] = [];
+    const centralParts: Uint8Array[] = [];
+    let offset = 0;
+
+    for (const file of files) {
+      const nameBytes = new TextEncoder().encode(file.name);
+      const data = file.data;
+      const crc = crc32(data);
+
+      const localHeader = new Uint8Array(30 + nameBytes.length);
+      writeUint32LE(localHeader, 0, 0x04034b50);
+      writeUint16LE(localHeader, 4, 20);
+      writeUint16LE(localHeader, 6, 0);
+      writeUint16LE(localHeader, 8, 0);
+      writeUint16LE(localHeader, 10, 0);
+      writeUint16LE(localHeader, 12, 0);
+      writeUint32LE(localHeader, 14, crc);
+      writeUint32LE(localHeader, 18, data.length);
+      writeUint32LE(localHeader, 22, data.length);
+      writeUint16LE(localHeader, 26, nameBytes.length);
+      writeUint16LE(localHeader, 28, 0);
+      localHeader.set(nameBytes, 30);
+
+      localParts.push(localHeader, data);
+
+      const centralHeader = new Uint8Array(46 + nameBytes.length);
+      writeUint32LE(centralHeader, 0, 0x02014b50);
+      writeUint16LE(centralHeader, 4, 20);
+      writeUint16LE(centralHeader, 6, 20);
+      writeUint16LE(centralHeader, 8, 0);
+      writeUint16LE(centralHeader, 10, 0);
+      writeUint16LE(centralHeader, 12, 0);
+      writeUint16LE(centralHeader, 14, 0);
+      writeUint32LE(centralHeader, 16, crc);
+      writeUint32LE(centralHeader, 20, data.length);
+      writeUint32LE(centralHeader, 24, data.length);
+      writeUint16LE(centralHeader, 28, nameBytes.length);
+      writeUint16LE(centralHeader, 30, 0);
+      writeUint16LE(centralHeader, 32, 0);
+      writeUint16LE(centralHeader, 34, 0);
+      writeUint16LE(centralHeader, 36, 0);
+      writeUint32LE(centralHeader, 38, 0);
+      writeUint32LE(centralHeader, 42, offset);
+      centralHeader.set(nameBytes, 46);
+
+      centralParts.push(centralHeader);
+      offset += localHeader.length + data.length;
+    }
+
+    const centralDirectory = concatBytes(centralParts);
+    const localData = concatBytes(localParts);
+    const endRecord = new Uint8Array(22);
+    writeUint32LE(endRecord, 0, 0x06054b50);
+    writeUint16LE(endRecord, 4, 0);
+    writeUint16LE(endRecord, 6, 0);
+    writeUint16LE(endRecord, 8, files.length);
+    writeUint16LE(endRecord, 10, files.length);
+    writeUint32LE(endRecord, 12, centralDirectory.length);
+    writeUint32LE(endRecord, 16, localData.length);
+    writeUint16LE(endRecord, 20, 0);
+
+    return new Blob([localData, centralDirectory, endRecord], { type: "application/zip" });
+  }
 
   useEffect(() => {
     if (!session) {
@@ -232,23 +346,72 @@ for (const card of playerCards)
     }
   }
 
+  async function captureSlideBlob(targetIndex: number) {
+    const previousIndex = index;
+    setIndex(targetIndex);
+    setExpandedVoters(new Set());
+    try {
+      await waitForPaint();
+
+      const slideEl = document.querySelector(".reportcard__slide-wrapper");
+      if (!slideEl) {
+        throw new Error("Slide not found");
+      }
+
+      const canvas = await html2canvas(slideEl as HTMLElement, {
+        backgroundColor: "#11111a",
+        scale: captureScale,
+        useCORS: true,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: Math.max(slideEl.scrollWidth, slideEl.clientWidth),
+        windowHeight: Math.max(slideEl.scrollHeight, slideEl.clientHeight),
+      });
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("Failed to render slide");
+      return new Uint8Array(await blob.arrayBuffer());
+    } finally {
+      setIndex(previousIndex);
+      setExpandedVoters(new Set());
+      await waitForPaint();
+    }
+  }
+
   async function handleDownloadSlide(e?: React.MouseEvent) {
     e?.stopPropagation();
     try {
-      const slideEl = document.querySelector(".reportcard__slide-wrapper");
-      if (!slideEl) return;
+      if (isLast && slides.length > 0) {
+        setExporting(true);
+        const files: { name: string; data: Uint8Array }[] = [];
 
-      const canvas = await html2canvas(slideEl as HTMLElement, {
-        backgroundColor: '#1a1a1a',
-        scale: 2,
-        useCORS: true,
-      });
+        for (let i = 0; i < slides.length; i++) {
+          const png = await captureSlideBlob(i);
+          files.push({
+            name: `verdikt-slide-${String(i + 1).padStart(2, "0")}.png`,
+            data: png,
+          });
+        }
 
-      const link = document.createElement('a');
-      link.href = canvas.toDataURL('image/png');
+        const zip = buildZip(files);
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(zip);
+        link.download = `verdikt-slides.zip`;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        setExporting(false);
+        return;
+      }
+
+      const png = await captureSlideBlob(index);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([png], { type: "image/png" }));
       link.download = `verdikt-slide-${index + 1}.png`;
       link.click();
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      setExporting(false);
     } catch {
+      setExporting(false);
       alert('Failed to download slide. Try again.');
     }
   }
@@ -279,6 +442,14 @@ for (const card of playerCards)
 
   return (
     <div className="screen reportcard">
+      {exporting && (
+        <div className="reportcard__exporting" aria-live="polite">
+          <div className="reportcard__exporting-card">
+            <p className="reportcard__exporting-title">Preparing your ZIP</p>
+            <p className="reportcard__exporting-copy">We’re rendering every slide for download.</p>
+          </div>
+        </div>
+      )}
       <div className="reportcard__topbar">
         <div className="reportcard__progress">
           {slides.map((_, i) => (
@@ -646,13 +817,14 @@ for (const card of playerCards)
         <button
           className="reportcard__nav-btn"
           onClick={handleDownloadSlide}
-          aria-label="Download slide"
-          title="Download this slide"
+          aria-label={isLast ? "Download all slides as ZIP" : "Download slide"}
+          title={isLast ? "Download all slides as ZIP" : "Download this slide"}
         >
-          ⬇
+          {isLast ? "ZIP" : "⬇"}
         </button>
         <button
           className={`reportcard__nav-btn ${isLast ? 'reportcard__nav-btn--finish' : 'reportcard__nav-btn--primary'}`}
+          disabled={exporting}
           onClick={(e) => {
             e.stopPropagation();
             if (isLast) {
