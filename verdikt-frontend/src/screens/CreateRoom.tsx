@@ -23,6 +23,41 @@ export default function CreateRoom() {
   const [error, setError] = useState('');
   const [questionCount, setQuestionCount] = useState(10);
 
+  const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  async function submitRoomCreate(): Promise<Response> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: roomName.trim(),
+            hostName: hostName.trim(),
+            voteMode,
+            questionDurationSeconds,
+            questionCount,
+          }),
+        });
+
+        if ((res.status === 502 || res.status === 503) && attempt === 0) {
+          await sleep(600);
+          continue;
+        }
+
+        return res;
+      } catch (error) {
+        if (attempt === 0) {
+          await sleep(600);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new Error('Room creation failed unexpectedly.');
+  }
+
   async function handleCreate() {
     if (roomName.trim().length < 2) { setError('Give your room a name first'); return; }
     if (hostName.trim().length < 2) { setError('What should we call you?'); return; }
@@ -30,21 +65,15 @@ export default function CreateRoom() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: roomName.trim(),
-          hostName: hostName.trim(),
-          voteMode,
-          questionDurationSeconds,
-           questionCount,
-        }),
-      });
+      const res = await submitRoomCreate();
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        setError(err.message ?? "Couldn't create the room. Try again.");
+        if (res.status === 502 || res.status === 503) {
+          setError('The backend is waking up or unreachable right now. Give it a few seconds and try again.');
+        } else {
+          setError(err.message ?? "Couldn't create the room. Try again.");
+        }
         return;
       }
 
@@ -67,7 +96,7 @@ export default function CreateRoom() {
 
       navigate(`/lobby/${data.code}`);
     } catch {
-      setError("Couldn't create the room. Try again.");
+      setError('The backend is unreachable right now. Try again in a moment.');
     } finally {
       setLoading(false);
     }
