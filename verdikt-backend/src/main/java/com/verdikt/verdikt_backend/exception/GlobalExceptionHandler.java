@@ -26,7 +26,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RoomExpiredException.class)
 public ResponseEntity<Map<String, Object>> handleRoomExpired(RoomExpiredException ex) {
-    ex.printStackTrace();
+    log.error("Room expired", ex);
     return buildResponse(HttpStatus.GONE, "ROOM_EXPIRED", ex.getMessage());
 }
 

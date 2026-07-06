@@ -317,6 +317,26 @@ for (const card of playerCards)
                 questions
               </p>
               {slide.data.leaderboard.length > 0 && (
+                <div className="reportcard__podium">
+                  {slide.data.leaderboard.slice(0, 3).map((entry, i) => (
+                    <div
+                      key={entry.playerName}
+                      className={`reportcard__podium-slot reportcard__podium-slot--${i + 1}`}
+                    >
+                      <span className="reportcard__podium-rank">
+                        {i === 0 ? "1" : i === 1 ? "2" : "3"}
+                      </span>
+                      <span className="reportcard__podium-name">
+                        {entry.playerName}
+                      </span>
+                      <span className="reportcard__podium-votes">
+                        {entry.totalVotesReceived} votes
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {slide.data.leaderboard.length > 0 && (
                 <div className="reportcard__leaderboard">
                   {slide.data.leaderboard.map((e, i) => (
                     <div key={e.playerName} className="reportcard__leader-row">
@@ -566,16 +586,19 @@ for (const card of playerCards)
                 <div className="reportcard__final-recap">
                   <p className="reportcard__final-recap-label">all questions</p>
                   {data.pollCards.map((card) => {
-  const winner = card.results.find(r => r.isWinner) ?? card.results.sort((a,b) => b.voteCount - a.voteCount)[0];
-  return (
-    <div key={card.questionId} className="reportcard__final-recap-row">
-      <span className="reportcard__final-recap-q">{card.questionText}</span>
-      <span className="reportcard__final-recap-winner">
-        {winner && winner.voteCount > 0 ? `${winner.playerName} · ${winner.voteCount}v` : 'no votes'}
-      </span>
-    </div>
-  );
-})}
+                    const winner = card.results.find((r) => r.isWinner) ??
+                      card.results.slice().sort((a, b) => b.voteCount - a.voteCount)[0];
+                    return (
+                      <div key={card.questionId} className="reportcard__final-recap-row">
+                        <span className="reportcard__final-recap-q">{card.questionText}</span>
+                        <span className="reportcard__final-recap-winner">
+                          {winner && winner.voteCount > 0
+                            ? `${winner.playerName} · ${winner.voteCount}v`
+                            : "no votes"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

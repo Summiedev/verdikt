@@ -39,13 +39,25 @@ private final WebSocketEventPublisher eventPublisher;
     @Transactional
     public RoomResponse createRoom(CreateRoomRequest request) {
         String code = generateUniqueCode();
+        String roomName = sanitize(request.getName());
+        String hostName = sanitize(request.getHostName());
+        int questionCount = request.getQuestionCount() != null && request.getQuestionCount() > 0
+                ? request.getQuestionCount()
+                : 10;
+
+        if (roomName.isBlank()) {
+            throw new IllegalArgumentException("Room name is required.");
+        }
+        if (hostName.isBlank()) {
+            throw new IllegalArgumentException("Host name is required.");
+        }
 
         Room room = Room.builder()
         .code(code)
-        .name(sanitize(request.getName()))
+        .name(roomName)
         .voteMode(request.getVoteMode())
         .maxPlayers(MAX_PLAYERS)
-        .maxQuestions(request.getQuestionCount() != null ? request.getQuestionCount() : 10)
+        .maxQuestions(questionCount)
         .questionDurationSeconds(request.getQuestionDurationSeconds())
         .build();
 
@@ -57,7 +69,7 @@ private final WebSocketEventPublisher eventPublisher;
 
         Player host = Player.builder()
         .room(room)
-        .name(sanitize(request.getHostName()))
+        .name(hostName)
         .isHost(true)
         .isOriginalHost(true)
         .build();
@@ -77,12 +89,17 @@ private final WebSocketEventPublisher eventPublisher;
 
     @Transactional
     public RoomResponse joinRoom(JoinRoomRequest request) {
+        String playerName = sanitize(request.getPlayerName());
+        if (playerName.isBlank()) {
+            throw new IllegalArgumentException("Player name is required.");
+        }
+
         Room room = roomRepository.findByCode(request.getCode().toUpperCase())
                 .orElseThrow(() -> new RoomNotFoundException("Room not found. Check the code and try again."));
 
         validateRoomIsJoinable(room);
 
-        if (playerRepository.existsByRoomIdAndName(room.getId(), sanitize(request.getPlayerName()))) {
+        if (playerRepository.existsByRoomIdAndName(room.getId(), playerName)) {
             throw new DuplicateNameException("That name is already taken in this room. Try another one.");
         }
 
@@ -92,7 +109,7 @@ private final WebSocketEventPublisher eventPublisher;
 
         Player player = Player.builder()
                 .room(room)
-                .name(sanitize(request.getPlayerName()))
+                .name(playerName)
                 .isHost(false)
                 .build();
 
@@ -146,13 +163,15 @@ private final WebSocketEventPublisher eventPublisher;
     }
 
     private void validateRoomNotExpired(Room room) {
-    log.info("DEBUG expiry check: status={} expiresAt={} now={} isBefore={}",
-            room.getStatus(), room.getExpiresAt(), Instant.now(),
-            room.getExpiresAt().isBefore(Instant.now()));
-    if (room.getStatus() == RoomStatus.EXPIRED || room.getExpiresAt().isBefore(Instant.now())) {
-        throw new RoomExpiredException("This room has expired.");
+        Instant expiresAt = room.getExpiresAt();
+        Instant now = Instant.now();
+        log.info("DEBUG expiry check: status={} expiresAt={} now={} isBefore={}",
+                room.getStatus(), expiresAt, now,
+                expiresAt != null && expiresAt.isBefore(now));
+        if (room.getStatus() == RoomStatus.EXPIRED || (expiresAt != null && expiresAt.isBefore(now))) {
+            throw new RoomExpiredException("This room has expired.");
+        }
     }
-}
     private String generateUniqueCode() {
         String code;
         do {

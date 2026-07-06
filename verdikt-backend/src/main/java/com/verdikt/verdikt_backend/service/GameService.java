@@ -28,6 +28,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -135,8 +137,12 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
         log.info("Game finished: room={}", room.getCode());
         eventPublisher.publishGameEnded(room.getId());
     }
-@Transactional(readOnly = true)
-public List<QuestionPreviewResponse> previewRandomQuestions(int count) {
+    @Transactional(readOnly = true)
+    public List<QuestionPreviewResponse> previewRandomQuestions(int count) {
+    if (count <= 0) {
+        throw new IllegalArgumentException("Question count must be at least 1.");
+    }
+
     List<Question> questions = questionRepository.findRandomQuestions(count);
     if (questions.isEmpty()) {
         throw new NoQuestionsAvailableException("No built-in questions exist yet. Add your own questions to start.");
@@ -157,17 +163,18 @@ public List<QuestionPreviewResponse> previewRandomQuestions(int count) {
     }
 
     @Transactional(readOnly = true)
-public CurrentQuestionResponse toCurrentQuestionResponse(UUID roomId, RoomQuestion rq) {
-    int total = roomQuestionRepository.countByRoomId(roomId);
-    Room room = roomRepository.findById(roomId).orElseThrow();   // ← ADD
-    return CurrentQuestionResponse.builder()
-            .questionId(rq.getQuestion().getId())
-            .text(rq.getQuestion().getText())
-            .questionIndex(rq.getOrderIndex() + 1)
-            .totalQuestions(total)
-            .startedAt(room.getCurrentQuestionStartedAt())        // ← ADD
-            .build();
-}
+    public CurrentQuestionResponse toCurrentQuestionResponse(UUID roomId, RoomQuestion rq) {
+        int total = roomQuestionRepository.countByRoomId(roomId);
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+        return CurrentQuestionResponse.builder()
+                .questionId(rq.getQuestion().getId())
+                .text(rq.getQuestion().getText())
+                .questionIndex(rq.getOrderIndex() + 1)
+                .totalQuestions(total)
+                .startedAt(room.getCurrentQuestionStartedAt())
+                .build();
+    }
     @Transactional
 public void endGameEarly(UUID roomId, UUID hostToken) {
     Room room = roomRepository.findById(roomId)
@@ -202,16 +209,21 @@ public void endGameEarly(UUID roomId, UUID hostToken) {
         List<Question> finalQuestions = new ArrayList<>();
 
         if (request != null && request.getSelectedQuestionIds() != null) {
-            for (UUID id : request.getSelectedQuestionIds()) {
+            for (UUID id : new java.util.LinkedHashSet<>(request.getSelectedQuestionIds())) {
                 questionRepository.findById(id).ifPresent(question -> addUnique(finalQuestions, question));
             }
         }
 
         if (request != null && request.getCustomQuestionTexts() != null) {
+            Set<String> seenCustomTexts = new java.util.HashSet<>();
             for (String text : request.getCustomQuestionTexts()) {
-                if (text == null || text.trim().length() < 5) continue;
+                if (text == null) continue;
+                String trimmed = text.trim();
+                if (trimmed.length() < 5) continue;
+                String dedupeKey = trimmed.toLowerCase(java.util.Locale.ROOT);
+                if (!seenCustomTexts.add(dedupeKey)) continue;
                 Question custom = Question.builder()
-                        .text(text.trim())
+                        .text(trimmed)
                         .category("custom")
                         .spiceLevel(SpiceLevel.MEDIUM)
                         .isCustom(true)

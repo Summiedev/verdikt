@@ -4,6 +4,7 @@ import com.verdikt.verdikt_backend.dto.request.CastVoteRequest;
 import com.verdikt.verdikt_backend.model.Room;
 import com.verdikt.verdikt_backend.model.RoomQuestion;
 import com.verdikt.verdikt_backend.model.Vote;
+import com.verdikt.verdikt_backend.exception.RoomNotFoundException;
 import com.verdikt.verdikt_backend.repository.RoomQuestionRepository;
 import com.verdikt.verdikt_backend.repository.RoomRepository;
 import com.verdikt.verdikt_backend.repository.VoteRepository;
@@ -52,7 +53,8 @@ public ResponseEntity<List<Map<String, String>>> getCurrentVotes(
     @PathVariable UUID roomId,
     @RequestHeader("X-Player-Token") UUID playerToken
 ) {
-    Room room = roomRepository.findById(roomId).orElseThrow();
+    Room room = roomRepository.findById(roomId)
+            .orElseThrow(() -> new RoomNotFoundException("Room not found."));
     RoomQuestion active = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId).orElse(null);
     if (active == null) return ResponseEntity.ok(List.of());
 

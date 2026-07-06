@@ -144,7 +144,7 @@ public class ReportCardService {
         return ReportCardOverviewResponse.builder()
                 .roomName(room.getName())
                 .totalPlayers(players.size())
-                .totalQuestions((int) allVotes.stream().map(v -> v.getQuestion().getId()).distinct().count())
+                .totalQuestions(roomQuestions.size())
                 .leaderboard(leaderboard)
                 .verdict("THE GC HAS SPOKEN 🔥")
                 .build();

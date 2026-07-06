@@ -37,6 +37,10 @@ public class VoteService {
 
     @Transactional
     public List<Map<String, Object>> castVotes(UUID roomId, UUID voterToken, CastVoteRequest request) {
+        if (request == null || request.getQuestionId() == null) {
+            throw new IllegalArgumentException("Question is required.");
+        }
+
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
 
@@ -58,6 +62,13 @@ public class VoteService {
         List<UUID> targetIds = request.getVotedForPlayerIds() == null ? List.of() : request.getVotedForPlayerIds();
         Set<UUID> desiredSelections = new LinkedHashSet<>(targetIds);
         Set<UUID> existingSelections = new HashSet<>(voteRepository.findVotedForIdsByRoomAndQuestionAndVoter(roomId, question.getId(), voter.getId()));
+
+        if (desiredSelections.equals(existingSelections)) {
+            return buildVoteState(
+                    voteRepository.findAllByRoomIdAndQuestionId(roomId, question.getId()),
+                    room.getVoteMode() == com.verdikt.verdikt_backend.model.enums.VoteMode.PUBLIC
+            );
+        }
 
         List<UUID> toRemove = existingSelections.stream()
                 .filter(id -> !desiredSelections.contains(id))
@@ -109,7 +120,7 @@ public class VoteService {
 
     @Transactional
     public List<Map<String, Object>> removeVote(UUID roomId, UUID voterToken, CastVoteRequest request) {
-        if (request.getQuestionId() == null) return List.of();
+        if (request == null || request.getQuestionId() == null) return List.of();
 
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
