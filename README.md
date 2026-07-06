@@ -6,6 +6,18 @@ A real-time multiplayer polling game where your friend group settles disputes, d
 
 **Verdikt** is a full-stack web application that lets players join a room, vote on questions about each other, and watch live results unfold. Perfect for group chats, game nights, or any scenario where the group's verdict matters.
 
+## Screenshots
+
+These are the current app screens from the latest build:
+
+![Verdikt home screen](readme-assets/verdikt-1.png)
+
+![Verdikt lobby screen](readme-assets/verdikt-2.png)
+
+![Verdikt voting screen](readme-assets/verdikt-3.png)
+
+![Verdikt results screen](readme-assets/verdikt-4.png)
+
 ### Key Features
 
 - **Real-time Voting**: Vote on multiple options simultaneously and see results update live via WebSocket
