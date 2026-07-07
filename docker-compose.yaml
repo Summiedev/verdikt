@@ -2,6 +2,7 @@ services:
   backend:
     build: ./verdikt-backend
     container_name: verdikt-backend
+    restart: unless-stopped
     env_file:
       - .env
     ports:
