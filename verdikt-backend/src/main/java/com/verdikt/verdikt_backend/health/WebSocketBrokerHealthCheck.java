@@ -3,6 +3,8 @@ package com.verdikt.verdikt_backend.health;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 @Component
 public class WebSocketBrokerHealthCheck {
 
