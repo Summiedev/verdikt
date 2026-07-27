@@ -1,14 +1,18 @@
 package com.verdikt.verdikt_backend.service;
 
+import com.verdikt.verdikt_backend.config.CacheConstants;
 import com.verdikt.verdikt_backend.dto.request.CastVoteRequest;
 import com.verdikt.verdikt_backend.exception.*;
 import com.verdikt.verdikt_backend.model.*;
 import com.verdikt.verdikt_backend.model.enums.RoomStatus;
+import com.verdikt.verdikt_backend.model.enums.VoteMode;
 import com.verdikt.verdikt_backend.repository.*;
 import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +39,7 @@ public class VoteService {
     private final WebSocketEventPublisher eventPublisher;
     // removed EntityManager — flush/clear inside a vote loop was causing unnecessary DB round trips
 
+    @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#roomId")
     @Transactional
     public List<Map<String, Object>> castVotes(UUID roomId, UUID voterToken, CastVoteRequest request) {
         if (request == null || request.getQuestionId() == null) {
@@ -65,7 +70,7 @@ public class VoteService {
 
         if (desiredSelections.equals(existingSelections)) {
             return buildVoteState(
-                    voteRepository.findAllByRoomIdAndQuestionId(roomId, question.getId()),
+                    voteRepository.findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(roomId, question.getId()),
                     room.getVoteMode() == com.verdikt.verdikt_backend.model.enums.VoteMode.PUBLIC
             );
         }
@@ -80,7 +85,7 @@ public class VoteService {
         if (desiredSelections.isEmpty()) {
             voteRepository.deleteByRoomIdAndVoterIdAndQuestionId(roomId, voter.getId(), question.getId());
         } else {
-            Map<UUID, Player> targetPlayers = playerRepository.findAllById(desiredSelections)
+            Map<UUID, Player> targetPlayers = playerRepository.findAllByIdWithRoom(desiredSelections)
                     .stream().collect(Collectors.toMap(Player::getId, p -> p));
 
             for (UUID votedForId : desiredSelections) {
@@ -104,8 +109,7 @@ public class VoteService {
             }
         }
 
-        voteRepository.flush();
-        List<Vote> currentVotes = voteRepository.findAllByRoomIdAndQuestionId(roomId, question.getId());
+        List<Vote> currentVotes = voteRepository.findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(roomId, question.getId());
         List<Map<String, Object>> authoritativeState = buildVoteState(currentVotes, room.getVoteMode() == com.verdikt.verdikt_backend.model.enums.VoteMode.PUBLIC);
         eventPublisher.publishVoteState(roomId, question.getId(), authoritativeState, room.getVoteMode());
 
@@ -115,9 +119,10 @@ public class VoteService {
 
     @Transactional(readOnly = true)
     public List<Vote> getVotesForQuestion(UUID roomId, UUID questionId) {
-        return voteRepository.findAllByRoomIdAndQuestionId(roomId, questionId);
+        return voteRepository.findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(roomId, questionId);
     }
 
+    @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#roomId")
     @Transactional
     public List<Map<String, Object>> removeVote(UUID roomId, UUID voterToken, CastVoteRequest request) {
         if (request == null || request.getQuestionId() == null) return List.of();
@@ -135,9 +140,7 @@ public class VoteService {
                     roomId, voter.getId(), request.getQuestionId(), targets);
         }
 
-        voteRepository.flush();
-
-        List<Vote> currentVotes = voteRepository.findAllByRoomIdAndQuestionId(roomId, request.getQuestionId());
+        List<Vote> currentVotes = voteRepository.findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(roomId, request.getQuestionId());
         List<Map<String, Object>> authoritativeState = buildVoteState(currentVotes, room.getVoteMode() == com.verdikt.verdikt_backend.model.enums.VoteMode.PUBLIC);
         eventPublisher.publishVoteState(
                 roomId,
@@ -146,6 +149,33 @@ public class VoteService {
                 room.getVoteMode()
         );
         return authoritativeState;
+    }
+
+    @Cacheable(value = CacheConstants.VOTE_STATE, key = "#roomId")
+    @Transactional(readOnly = true)
+    public List<Map<String, String>> getCurrentVoteState(UUID roomId) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+
+        RoomQuestion active = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId).orElse(null);
+        if (active == null) return List.of();
+
+        boolean isPublic = room.getVoteMode() == com.verdikt.verdikt_backend.model.enums.VoteMode.PUBLIC;
+
+        List<Vote> votes = voteRepository.findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(
+                roomId, active.getQuestion().getId());
+
+        List<Map<String, String>> result = votes.stream().map(v -> {
+            Map<String, String> m = new HashMap<>();
+            m.put("votedForId", v.getVotedFor().getId().toString());
+            if (isPublic) {
+                m.put("voterId", v.getVoter().getId().toString());
+                m.put("voterName", v.getVoter().getName());
+            }
+            return m;
+        }).collect(Collectors.toList());
+
+        return result;
     }
 
     private List<Map<String, Object>> buildVoteState(List<Vote> votes, boolean isPublic) {

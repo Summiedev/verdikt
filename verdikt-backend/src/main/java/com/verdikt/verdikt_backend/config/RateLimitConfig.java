@@ -1,38 +1,50 @@
 package com.verdikt.verdikt_backend.config;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.Refill;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 
 @Component
 public class RateLimitConfig {
 
-    // ip -> bucket, separate maps per action type
-    private final ConcurrentMap<String, Bucket> roomCreationBuckets = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Bucket> voteBuckets = new ConcurrentHashMap<>();
+    private final Cache<String, Bucket> roomCreationBuckets;
+    private final Cache<String, Bucket> voteBuckets;
 
-    public Bucket resolveRoomCreationBucket(String ip) {
-        return roomCreationBuckets.computeIfAbsent(ip, k -> newRoomCreationBucket());
+    public RateLimitConfig(
+            @Value("${app.rate-limit.room-creation-ttl-minutes:120}") int roomCreationTtlMinutes,
+            @Value("${app.rate-limit.vote-ttl-minutes:5}") int voteTtlMinutes
+    ) {
+        this.roomCreationBuckets = Caffeine.newBuilder()
+                .expireAfterAccess(roomCreationTtlMinutes, TimeUnit.MINUTES)
+                .build();
+
+        this.voteBuckets = Caffeine.newBuilder()
+                .expireAfterAccess(voteTtlMinutes, TimeUnit.MINUTES)
+                .build();
     }
 
-    public Bucket resolveVoteBucket(String ip) {
-        return voteBuckets.computeIfAbsent(ip, k -> newVoteBucket());
+    public Bucket resolveRoomCreationBucket(String ip) {
+        return roomCreationBuckets.get(ip, k -> newRoomCreationBucket());
+    }
+
+    public Bucket resolveVoteBucket(String key) {
+        return voteBuckets.get(key, k -> newVoteBucket());
     }
 
     private Bucket newRoomCreationBucket() {
-        // max 5 rooms per hour per IP
         Bandwidth limit = Bandwidth.classic(5, Refill.intervally(5, Duration.ofHours(1)));
         return Bucket.builder().addLimit(limit).build();
     }
 
     private Bucket newVoteBucket() {
-    // 30 votes per 10 seconds — enough for free toggle without spam
-    Bandwidth limit = Bandwidth.classic(30, Refill.intervally(30, Duration.ofSeconds(10)));
-    return Bucket.builder().addLimit(limit).build();
-}
+        Bandwidth limit = Bandwidth.classic(30, Refill.intervally(30, Duration.ofSeconds(10)));
+        return Bucket.builder().addLimit(limit).build();
+    }
 }

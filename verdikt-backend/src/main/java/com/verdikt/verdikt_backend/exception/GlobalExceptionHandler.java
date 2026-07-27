@@ -50,6 +50,16 @@ public ResponseEntity<Map<String, Object>> handleRoomExpired(RoomExpiredExceptio
         return buildResponse(HttpStatus.UNAUTHORIZED, "PLAYER_NOT_FOUND", ex.getMessage());
     }
 
+    @ExceptionHandler(TokenExpiredException.class)
+    public ResponseEntity<Map<String, Object>> handleTokenExpired(TokenExpiredException ex) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, "TOKEN_EXPIRED", ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidToken(InvalidTokenException ex) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, "INVALID_TOKEN", ex.getMessage());
+    }
+
     @ExceptionHandler(NoQuestionsAvailableException.class)
     public ResponseEntity<Map<String, Object>> handleNoQuestionsAvailable(NoQuestionsAvailableException ex) {
         log.error("No questions available", ex);

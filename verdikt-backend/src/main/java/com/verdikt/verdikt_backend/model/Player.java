@@ -50,9 +50,13 @@ public class Player {
     @Column(name = "joined_at", nullable = false, updatable = false)
     private LocalDateTime joinedAt;
 
+    @Column(name = "expires_at", nullable = false)
+    private LocalDateTime expiresAt;
+
     @PrePersist
     public void prePersist() {
         this.joinedAt = LocalDateTime.now();
         if (this.token == null) this.token = UUID.randomUUID();
+        if (this.expiresAt == null) this.expiresAt = LocalDateTime.now().plusHours(24);
     }
 }

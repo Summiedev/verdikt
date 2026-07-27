@@ -17,6 +17,27 @@ public interface VoteRepository extends JpaRepository<Vote, UUID> {
 
     List<Vote> findAllByRoomId(UUID roomId);
 
+    @Query("""
+        SELECT v FROM Vote v
+        JOIN FETCH v.voter
+        JOIN FETCH v.votedFor
+        WHERE v.room.id = :roomId
+          AND v.question.id = :questionId
+    """)
+    List<Vote> findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(
+            @Param("roomId") UUID roomId,
+            @Param("questionId") UUID questionId
+    );
+
+    @Query("""
+        SELECT v FROM Vote v
+        JOIN FETCH v.voter
+        JOIN FETCH v.votedFor
+        JOIN FETCH v.question
+        WHERE v.room.id = :roomId
+    """)
+    List<Vote> findAllByRoomIdWithAllAssociations(@Param("roomId") UUID roomId);
+
     boolean existsByRoomIdAndQuestionIdAndVoterIdAndVotedForId(
         UUID roomId, UUID questionId, UUID voterId, UUID votedForId
     );

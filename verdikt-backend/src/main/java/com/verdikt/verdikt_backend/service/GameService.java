@@ -1,5 +1,6 @@
 package com.verdikt.verdikt_backend.service;
 
+import com.verdikt.verdikt_backend.config.CacheConstants;
 import com.verdikt.verdikt_backend.dto.request.StartGameRequest;
 import com.verdikt.verdikt_backend.dto.response.CurrentQuestionResponse;
 import com.verdikt.verdikt_backend.dto.response.QuestionPreviewResponse;
@@ -18,6 +19,9 @@ import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -45,11 +49,21 @@ public class GameService {
     private final QuestionRepository questionRepository;
     private final RoomQuestionRepository roomQuestionRepository;
     private final PlayerRepository playerRepository;
+    private final CacheManager cacheManager;
 
+    private void evictRoomCache(String code) {
+        if (code != null && cacheManager.getCache(CacheConstants.ROOM_BY_CODE) != null) {
+            cacheManager.getCache(CacheConstants.ROOM_BY_CODE).evict(code);
+        }
+    }
+
+    @CacheEvict(value = CacheConstants.NON_CUSTOM_QUESTIONS, key = "'all'")
     @Transactional
-public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
-    Room room = roomRepository.findById(roomId)
-            .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+    public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+
+        evictRoomCache(room.getCode());
 
     if (room.getStatus() != RoomStatus.WAITING) {
         throw new InvalidRoomStateException("Game has already started or finished.");
@@ -85,10 +99,13 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
 
     log.info("Game started: room={} questionCount={}", room.getCode(), finalQuestions.size());
 }
+    @CacheEvict(value = CacheConstants.ACTIVE_QUESTION, key = "#roomId")
     @Transactional
     public CurrentQuestionResponse advanceToNextQuestion(UUID roomId, UUID playerToken) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+
+        evictRoomCache(room.getCode());
 
         Player requester = playerRepository.findByToken(playerToken)
                 .orElseThrow(() -> new PlayerNotFoundException("Player session not found."));
@@ -130,6 +147,7 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
         return response;
     }
 
+    @CacheEvict(value = CacheConstants.ROOM_BY_CODE, key = "#room.code")
     @Transactional
     public void endGame(Room room) {
         room.setStatus(RoomStatus.FINISHED);
@@ -155,6 +173,7 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
                     .build())
             .collect(Collectors.toList());
 }
+    @Cacheable(value = CacheConstants.ACTIVE_QUESTION, key = "#roomId")
     @Transactional(readOnly = true)
     public CurrentQuestionResponse getCurrentQuestion(UUID roomId) {
         RoomQuestion rq = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId)
@@ -175,10 +194,13 @@ public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
                 .startedAt(room.getCurrentQuestionStartedAt())
                 .build();
     }
+    @CacheEvict(value = CacheConstants.ACTIVE_QUESTION, key = "#roomId")
     @Transactional
 public void endGameEarly(UUID roomId, UUID hostToken) {
-    Room room = roomRepository.findById(roomId)
-            .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+
+        evictRoomCache(room.getCode());
 
     Player requester = playerRepository.findByToken(hostToken)
             .orElseThrow(() -> new PlayerNotFoundException("Player session not found."));

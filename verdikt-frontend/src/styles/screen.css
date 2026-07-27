@@ -8,3 +8,8 @@
   padding: 24px 20px 40px;
   min-height: 100vh;
 }
+
+/* Home screen overrides the narrow max-width for a spacious layout */
+.screen.home {
+  max-width: 100%;
+}

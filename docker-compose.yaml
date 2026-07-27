@@ -1,4 +1,42 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: verdikt-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+    networks:
+      - verdikt-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: verdikt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: verdikt
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:summie}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - verdikt-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d verdikt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
   backend:
     build: ./verdikt-backend
     container_name: verdikt-backend
@@ -6,19 +44,54 @@ services:
     env_file:
       - .env
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - verdikt-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/verdikt?useTimezone=true&serverTimezone=UTC
+      SPRING_REDIS_HOST: redis
 
   frontend:
     build: ./verdikt-frontend
     container_name: verdikt-frontend
+    restart: unless-stopped
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - verdikt-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+
+volumes:
+  redis-data:
+  postgres-data:
 
 networks:
   verdikt-network:

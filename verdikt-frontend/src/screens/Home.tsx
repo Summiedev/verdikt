@@ -31,6 +31,7 @@ export default function Home() {
     <div className="screen home">
       <div className="home__orb home__orb--one" aria-hidden="true" />
       <div className="home__orb home__orb--two" aria-hidden="true" />
+      <div className="home__orb home__orb--three" aria-hidden="true" />
       <div className="home__grid" aria-hidden="true" />
 
       <header className="home__brand">

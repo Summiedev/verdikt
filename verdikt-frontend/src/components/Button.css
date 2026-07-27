@@ -13,6 +13,8 @@
   gap: 8px;
   position: relative;
   overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn::before {
@@ -41,16 +43,16 @@
 .btn--primary {
   background: linear-gradient(135deg, var(--coral) 0%, var(--coral-deep) 100%);
   color: var(--white);
-  box-shadow: 0 8px 24px rgba(235, 111, 87, 0.24);
+  box-shadow: 0 8px 24px rgba(235, 111, 87, 0.24), var(--shadow-glow-coral);
 }
 
 .btn--primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 12px 32px rgba(235, 111, 87, 0.32);
+  box-shadow: 0 12px 32px rgba(235, 111, 87, 0.35), 0 0 48px rgba(255, 107, 91, 0.12);
 }
 
 .btn--primary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.98);
   box-shadow: 0 4px 12px rgba(235, 111, 87, 0.24);
 }
 
@@ -59,16 +61,18 @@
   color: var(--ink);
   box-shadow: 0 3px 0 var(--sand-line);
   border: 2px solid var(--sand-line);
+  backdrop-filter: blur(4px);
 }
 
 .btn--secondary:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.95);
   transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(26, 26, 26, 0.08);
+  box-shadow: 0 6px 16px rgba(26, 26, 26, 0.08);
+  border-color: rgba(45, 42, 38, 0.15);
 }
 
 .btn--secondary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.98);
   box-shadow: 0 0 0 var(--sand-line);
 }
 
@@ -80,6 +84,7 @@
 
 .btn--ghost:hover {
   color: var(--ink);
+  background: rgba(45, 42, 38, 0.04);
 }
 
 .btn--danger {
@@ -87,6 +92,12 @@
   color: var(--danger);
   box-shadow: 0 3px 0 #F0C4BD;
   border: 2px solid #F0C4BD;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--coral-pale);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(232, 80, 63, 0.15);
 }
 
 .btn--danger:active {

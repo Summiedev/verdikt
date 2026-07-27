@@ -30,6 +30,27 @@ export function loadSession(): Session | null {
   return parsed;
 }
 
+export async function refreshSession(playerToken: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/players/refresh', {
+      method: 'POST',
+      headers: {
+        'X-Player-Token': playerToken,
+      },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data.status === 'ok' || data.errorCode !== 'TOKEN_EXPIRED';
+    }
+
+    return false;
+  } catch (e) {
+    console.error('Session refresh failed', e);
+    return false;
+  }
+}
+
 export function clearSession() {
   sessionStorage.removeItem(KEY);
   localStorage.removeItem(KEY);

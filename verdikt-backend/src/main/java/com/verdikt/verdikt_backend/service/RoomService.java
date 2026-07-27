@@ -1,5 +1,6 @@
 package com.verdikt.verdikt_backend.service;
 
+import com.verdikt.verdikt_backend.config.CacheConstants;
 import com.verdikt.verdikt_backend.dto.request.CreateRoomRequest;
 import com.verdikt.verdikt_backend.dto.request.JoinRoomRequest;
 import com.verdikt.verdikt_backend.dto.response.PlayerResponse;
@@ -14,6 +15,9 @@ import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,9 +36,16 @@ public class RoomService {
     private static final int CODE_LENGTH = 6;
     private static final int MAX_PLAYERS = 25;
     private static final SecureRandom RANDOM = new SecureRandom();
-private final WebSocketEventPublisher eventPublisher;
+    private final WebSocketEventPublisher eventPublisher;
     private final RoomRepository roomRepository;
     private final PlayerRepository playerRepository;
+    private final CacheManager cacheManager;
+
+    private void evictRoomCache(String code) {
+        if (code != null && cacheManager.getCache(CacheConstants.ROOM_BY_CODE) != null) {
+            cacheManager.getCache(CacheConstants.ROOM_BY_CODE).evict(code);
+        }
+    }
 
     @Transactional
     public RoomResponse createRoom(CreateRoomRequest request) {
@@ -152,6 +163,8 @@ private final WebSocketEventPublisher eventPublisher;
         room.setHostPlayerId(newHost.getId());
         roomRepository.save(room);
 
+        evictRoomCache(room.getCode());
+
         log.info("Host reassigned: room={} newHost={}", room.getCode(), newHost.getName());
     }
 
@@ -233,6 +246,8 @@ public void handleHostReconnect(UUID roomId, Player reconnectingPlayer) {
             .orElseThrow(() -> new RoomNotFoundException("Room not found."));
     room.setHostPlayerId(reconnectingPlayer.getId());
     roomRepository.save(room);
+
+    evictRoomCache(room.getCode());
 
     log.info("Host restored: room={} originalHost={}", room.getCode(), reconnectingPlayer.getName());
 }

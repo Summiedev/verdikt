@@ -17,17 +17,22 @@ public class CorsConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
+                .allowedHeaders("Content-Type", "X-Player-Token", "Authorization")
                 .allowCredentials(true)
                 .maxAge(3600);
-
 
         registry.addMapping("/ws/**")
                 .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
+                .allowedHeaders("Content-Type", "X-Player-Token", "Authorization")
                 .allowCredentials(true)
                 .maxAge(3600);
-    
+
+        registry.addMapping("/actuator/**")
+                .allowedOrigins(allowedOrigins)
+                .allowedMethods("GET", "OPTIONS")
+                .allowedHeaders("Content-Type")
+                .allowCredentials(false)
+                .maxAge(3600);
     }
 }

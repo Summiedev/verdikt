@@ -1,5 +1,6 @@
 package com.verdikt.verdikt_backend.service;
 
+import com.verdikt.verdikt_backend.config.CacheConstants;
 import com.verdikt.verdikt_backend.dto.response.reportcard.*;
 import com.verdikt.verdikt_backend.exception.*;
 import com.verdikt.verdikt_backend.model.*;
@@ -8,6 +9,7 @@ import com.verdikt.verdikt_backend.model.enums.VoteMode;
 import com.verdikt.verdikt_backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ public class ReportCardService {
     private final RoomQuestionRepository roomQuestionRepository;
     private final VoteRepository voteRepository;
 
+    @Cacheable(value = CacheConstants.REPORT_CARD, key = "#roomId")
     @Transactional(readOnly = true)
     public ReportCardResponse generateReportCard(UUID roomId) {
         Room room = roomRepository.findById(roomId)
@@ -35,16 +38,25 @@ public class ReportCardService {
 
         List<Player> players = playerRepository.findAllByRoomId(roomId);
         List<RoomQuestion> roomQuestions = roomQuestionRepository.findAllByRoomIdOrderByOrderIndex(roomId);
-        List<Vote> allVotes = voteRepository.findAllByRoomId(roomId);
+        List<Vote> allVotes = voteRepository.findAllByRoomIdWithAllAssociations(roomId);
 
         Map<UUID, Player> playerById = players.stream()
                 .collect(Collectors.toMap(Player::getId, p -> p));
 
-        List<PollCardResponse> pollCards = buildPollCards(roomQuestions, allVotes, playerById, room.getVoteMode());
+        Map<UUID, Long> totalVotesByPlayer = allVotes.stream()
+                .collect(Collectors.groupingBy(v -> v.getVotedFor().getId(), Collectors.counting()));
+
+        Map<UUID, List<Vote>> votesByQuestionId = allVotes.stream()
+                .collect(Collectors.groupingBy(v -> v.getQuestion().getId()));
+
+        List<PollCardResponse> pollCards = buildPollCards(
+                roomQuestions, votesByQuestionId, playerById, room.getVoteMode());
         Map<UUID, List<String>> titlesByPlayer = extractTitles(pollCards);
 
-        ReportCardOverviewResponse overview = buildOverview(room, players, roomQuestions, allVotes, titlesByPlayer);
-        List<PlayerTitleCardResponse> playerCards = buildPlayerCards(players, allVotes, titlesByPlayer);
+        ReportCardOverviewResponse overview = buildOverview(
+                room, players, roomQuestions, totalVotesByPlayer, titlesByPlayer);
+        List<PlayerTitleCardResponse> playerCards = buildPlayerCards(
+                players, totalVotesByPlayer, titlesByPlayer);
 
         log.info("Report card generated: room={} players={} questions={}",
                 room.getCode(), players.size(), roomQuestions.size());
@@ -58,7 +70,7 @@ public class ReportCardService {
 
     private List<PollCardResponse> buildPollCards(
             List<RoomQuestion> roomQuestions,
-            List<Vote> allVotes,
+            Map<UUID, List<Vote>> votesByQuestionId,
             Map<UUID, Player> playerById,
             VoteMode voteMode
     ) {
@@ -67,11 +79,8 @@ public class ReportCardService {
         for (RoomQuestion rq : roomQuestions) {
             UUID questionId = rq.getQuestion().getId();
 
-            List<Vote> votesForQuestion = allVotes.stream()
-                    .filter(v -> v.getQuestion().getId().equals(questionId))
-                    .collect(Collectors.toList());
+            List<Vote> votesForQuestion = votesByQuestionId.getOrDefault(questionId, List.of());
 
-            // group by votedFor -> list of voter names
             Map<UUID, List<String>> votedByMap = new HashMap<>();
             Map<UUID, Long> voteCounts = new HashMap<>();
 
@@ -109,7 +118,6 @@ public class ReportCardService {
         return cards;
     }
 
-    // maps playerId -> list of question titles they won (had the most votes for)
     private Map<UUID, List<String>> extractTitles(List<PollCardResponse> pollCards) {
         Map<UUID, List<String>> titles = new HashMap<>();
 
@@ -127,12 +135,9 @@ public class ReportCardService {
             Room room,
             List<Player> players,
             List<RoomQuestion> roomQuestions,
-            List<Vote> allVotes,
+            Map<UUID, Long> totalVotesByPlayer,
             Map<UUID, List<String>> titlesByPlayer
     ) {
-        Map<UUID, Long> totalVotesByPlayer = allVotes.stream()
-                .collect(Collectors.groupingBy(v -> v.getVotedFor().getId(), Collectors.counting()));
-
         List<ReportCardOverviewResponse.LeaderboardEntry> leaderboard = players.stream()
                 .map(p -> ReportCardOverviewResponse.LeaderboardEntry.builder()
                         .playerName(p.getName())
@@ -153,12 +158,9 @@ public class ReportCardService {
 
     private List<PlayerTitleCardResponse> buildPlayerCards(
             List<Player> players,
-            List<Vote> allVotes,
+            Map<UUID, Long> totalVotesByPlayer,
             Map<UUID, List<String>> titlesByPlayer
     ) {
-        Map<UUID, Long> totalVotesByPlayer = allVotes.stream()
-                .collect(Collectors.groupingBy(v -> v.getVotedFor().getId(), Collectors.counting()));
-
         return players.stream()
                 .map(p -> PlayerTitleCardResponse.builder()
                         .playerId(p.getId())
@@ -171,6 +173,6 @@ public class ReportCardService {
 
     private String getTopTitle(List<String> titles) {
         if (titles == null || titles.isEmpty()) return null;
-        return titles.get(0); // first title won, could weight by vote count instead
+        return titles.get(0);
     }
 }
