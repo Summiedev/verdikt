@@ -85,7 +85,8 @@ public class VoteService {
         if (desiredSelections.isEmpty()) {
             voteRepository.deleteByRoomIdAndVoterIdAndQuestionId(roomId, voter.getId(), question.getId());
         } else {
-            Map<UUID, Player> targetPlayers = playerRepository.findAllByIdWithRoom(desiredSelections)
+            List<UUID> desiredSelectionList = new ArrayList<>(desiredSelections);
+            Map<UUID, Player> targetPlayers = playerRepository.findAllByIdWithRoom(desiredSelectionList)
                     .stream().collect(Collectors.toMap(Player::getId, p -> p));
 
             for (UUID votedForId : desiredSelections) {
