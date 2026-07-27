@@ -65,6 +65,8 @@ services:
           cpus: '1.0'
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/verdikt?useTimezone=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-summie}
       SPRING_REDIS_HOST: redis
 
   frontend:
