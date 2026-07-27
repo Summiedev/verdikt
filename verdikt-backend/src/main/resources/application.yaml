@@ -55,7 +55,7 @@ spring:
       time-to-live: 600000
       cache-null-values: false
       use-key-prefix: true
-      key-prefix: verdikt:
+      key-prefix: "verdikt:"
 
 management:
   metrics:
