@@ -19,34 +19,18 @@ public class RoomCleanupScheduler {
 
     private final RoomRepository roomRepository;
 
-    // runs every 5 minutes
     @Scheduled(fixedRate = 5 * 60 * 1000)
     @Transactional
     public void expireStaleRooms() {
-         Instant now = Instant.now();
+        Instant now = Instant.now();
+        List<RoomStatus> targetStatuses = List.of(RoomStatus.WAITING, RoomStatus.IN_PROGRESS);
+        int expired = roomRepository.bulkExpireStaleRooms(targetStatuses, now);
 
-        List<Room> staleWaitingRooms = roomRepository.findAllByStatusAndExpiresAtBefore(RoomStatus.WAITING, now);
-        List<Room> staleInProgressRooms = roomRepository.findAllByStatusAndExpiresAtBefore(RoomStatus.IN_PROGRESS, now);
-
-        int count = 0;
-        for (Room room : staleWaitingRooms) {
-            room.setStatus(RoomStatus.EXPIRED);
-            roomRepository.save(room);
-            count++;
-        }
-        for (Room room : staleInProgressRooms) {
-            room.setStatus(RoomStatus.EXPIRED);
-            roomRepository.save(room);
-            count++;
-        }
-
-        if (count > 0) {
-            log.info("Room cleanup: expired {} stale rooms", count);
+        if (expired > 0) {
+            log.info("Room cleanup: expired {} stale rooms", expired);
         }
     }
 
-    // runs once a day — hard delete rooms that have been expired for over 24 hours
-    // keeps your free-tier Supabase storage from filling up with dead data
     @Scheduled(fixedRate = 24 * 60 * 60 * 1000)
     @Transactional
     public void purgeOldExpiredRooms() {

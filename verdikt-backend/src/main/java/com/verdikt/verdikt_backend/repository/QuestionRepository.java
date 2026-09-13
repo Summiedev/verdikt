@@ -21,6 +21,9 @@ public interface QuestionRepository extends JpaRepository<Question, UUID> {
     @Cacheable(value = CacheConstants.NON_CUSTOM_QUESTIONS, key = "'all'")
     List<Question> findByIsCustomFalse();
 
+    @Query("SELECT q FROM Question q WHERE q.id IN :ids")
+    List<Question> findAllByIds(@Param("ids") List<UUID> ids);
+
     @Query(value = """
         SELECT * FROM questions
         WHERE is_custom = false

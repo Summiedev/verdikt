@@ -11,7 +11,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -26,12 +28,16 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
 
         String origin = request.getHeader("Origin");
+        String requestScheme = request.getScheme();
+        String requestServer = request.getServerName();
+        int requestPort = request.getServerPort();
+        String currentHost = requestPort == -1 ? requestServer : requestServer + ":" + requestPort;
 
         if (isAllowedOrigin(origin)) {
             response.setHeader("Access-Control-Allow-Origin", origin);
             response.setHeader("Access-Control-Allow-Credentials", "true");
             response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-            response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Player-Token, Authorization");
+            response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Player-Token, Authorization, X-Request-ID, X-Trace-ID");
             response.setHeader("Access-Control-Max-Age", "3600");
         }
 
@@ -45,40 +51,45 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
         response.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
 
-        String csp;
-        String requestUri = request.getRequestURI();
-
-        if (requestUri.startsWith("/ws") || requestUri.startsWith("/topic") || requestUri.startsWith("/app")) {
-            csp = "default-src 'self'; connect-src 'self' " + String.join(" ", getCspOrigins()) + " ws://localhost:8080 wss://localhost:8080; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
-        } else {
-            csp = "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
-        }
+        String csp = buildContentSecurityPolicy(request, currentHost);
         response.setHeader("Content-Security-Policy", csp);
 
-        String scheme = request.getScheme();
-        if ("https".equalsIgnoreCase(scheme)) {
-            response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+        if ("https".equalsIgnoreCase(requestScheme)) {
+            response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
         }
 
         filterChain.doFilter(request, response);
     }
 
+    private String buildContentSecurityPolicy(HttpServletRequest request, String currentHost) {
+        StringBuilder csp = new StringBuilder();
+        csp.append("default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+
+        Set<String> origins = new HashSet<>();
+        for (String allowed : allowedOrigins) {
+            if (!"*".equals(allowed)) {
+                origins.add(allowed.trim());
+            }
+        }
+
+        String wsScheme = "https".equalsIgnoreCase(request.getScheme()) ? "wss" : "ws";
+        origins.add(wsScheme + "://" + currentHost);
+
+        StringBuilder connectSrc = new StringBuilder(" connect-src 'self'");
+        for (String o : origins) {
+            connectSrc.append(" ").append(o);
+        }
+        csp.append(connectSrc);
+
+        return csp.toString();
+    }
+
     private boolean isAllowedOrigin(String origin) {
         if (origin == null) return false;
         for (String allowed : allowedOrigins) {
-            if (allowed.equals("*")) return true;
-            if (allowed.equals(origin)) return true;
+            if (allowed.trim().equals("*")) return true;
+            if (allowed.trim().equals(origin)) return true;
         }
         return false;
-    }
-
-    private String[] getCspOrigins() {
-        List<String> httpsOrigins = new java.util.ArrayList<>();
-        for (String origin : allowedOrigins) {
-            if (!"*".equals(origin) && origin.startsWith("https://")) {
-                httpsOrigins.add(origin);
-            }
-        }
-        return httpsOrigins.toArray(new String[0]);
     }
 }

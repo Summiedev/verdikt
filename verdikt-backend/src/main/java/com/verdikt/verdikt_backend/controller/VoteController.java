@@ -41,6 +41,6 @@ public class VoteController {
             @PathVariable UUID roomId,
             @RequestHeader("X-Player-Token") UUID playerToken
     ) {
-        return ResponseEntity.ok(voteService.getCurrentVoteState(roomId));
+        return ResponseEntity.ok(voteService.getCurrentVoteState(roomId, playerToken));
     }
 }

@@ -39,12 +39,7 @@ public class PlayerService {
     public Player getByToken(UUID token) {
         LocalDateTime now = LocalDateTime.now();
         Player player = playerRepository.findByTokenAndExpiresAtAfter(token, now)
-                .orElseThrow(() -> {
-                    if (playerRepository.findByToken(token).isPresent()) {
-                        return new TokenExpiredException("Session expired. Please join again.");
-                    }
-                    return new PlayerNotFoundException("Session not found. Please join again.");
-                });
+                .orElseThrow(() -> new TokenExpiredException("Session not found or expired. Please join again."));
         return player;
     }
 
@@ -123,9 +118,7 @@ public class PlayerService {
 
     @Transactional(readOnly = true)
     public boolean isPlayerInRoom(UUID token, UUID roomId) {
-        return playerRepository.findByToken(token)
-                .map(p -> p.getRoom().getId().equals(roomId))
-                .orElse(false);
+        return playerRepository.existsByTokenAndRoomId(token, roomId);
     }
 
     

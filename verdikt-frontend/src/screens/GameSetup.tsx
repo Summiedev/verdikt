@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Button from '../components/Button';
 import { loadSession } from '../session';
 import './GameSetup.css';
+import { apiRequest, ApiError } from '../api/client';
 
 interface PreviewQuestion {
   id: string;
@@ -32,19 +33,13 @@ export default function GameSetup() {
     if (!session) return;
     setLoading(true);
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/preview-questions?count=15`,
-        { headers: { 'X-Player-Token': session.playerToken } }
+      const data = await apiRequest<PreviewQuestion[]>(
+        `/api/rooms/${session.roomId}/game/preview-questions?count=15`,
+        { playerToken: session.playerToken },
       );
-      if (res.status === 404) {
-        setError('No built-in questions exist yet. Add your own questions to start.');
-        setQuestions([]);
-        return;
-      }
-      const data = await res.json();
       setQuestions(data.map((q: PreviewQuestion) => ({ ...q, isCustom: false })));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load questions. Try again.");
+      setError(e instanceof ApiError ? e.message : "Couldn't load questions. Try again.");
       } finally {
       setLoading(false);
     }
@@ -73,25 +68,15 @@ export default function GameSetup() {
     const customQuestionTexts = questions.filter((q) => q.isCustom).map((q) => q.text);
 
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/start`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Player-Token': session.playerToken,
-          },
-          body: JSON.stringify({ selectedQuestionIds, customQuestionTexts }),
-        }
-      );
-      if (res.status === 404) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? 'No built-in questions exist yet. Add your own questions to start.');
-      }
-      if (!res.ok) throw new Error();
+      await apiRequest(`/api/rooms/${session.roomId}/game/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        playerToken: session.playerToken,
+        body: JSON.stringify({ selectedQuestionIds, customQuestionTexts }),
+      });
       navigate(`/play/${code}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't start the game. Try again.");
+      setError(e instanceof ApiError ? e.message : "Couldn't start the game. Try again.");
       setStarting(false);
     }
   }

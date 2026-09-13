@@ -29,11 +29,6 @@ export default function Home() {
 
   return (
     <div className="screen home">
-      <div className="home__orb home__orb--one" aria-hidden="true" />
-      <div className="home__orb home__orb--two" aria-hidden="true" />
-      <div className="home__orb home__orb--three" aria-hidden="true" />
-      <div className="home__grid" aria-hidden="true" />
-
       <header className="home__brand">
         <div className="home__brand-mark">V</div>
         <div>
@@ -44,7 +39,7 @@ export default function Home() {
 
       <main className="home__hero">
         <section className="home__hero-copy">
-          <Stamp label="the verdikt is in" size="lg" color="coral" />
+          <Stamp label="the verdikt is in" size="md" color="coral" />
           <p className="home__eyebrow">Live room voting for the boldest GC energy</p>
           <h1 className="home__headline">
             THE <span className="home__headline-accent">GC</span> HAS SPOKEN

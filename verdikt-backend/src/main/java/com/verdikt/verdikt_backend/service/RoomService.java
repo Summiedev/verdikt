@@ -8,37 +8,44 @@ import com.verdikt.verdikt_backend.dto.response.RoomResponse;
 import com.verdikt.verdikt_backend.exception.*;
 import com.verdikt.verdikt_backend.model.Player;
 import com.verdikt.verdikt_backend.model.Room;
+import com.verdikt.verdikt_backend.model.RoomQuestion;
 import com.verdikt.verdikt_backend.model.enums.RoomStatus;
 import com.verdikt.verdikt_backend.repository.PlayerRepository;
+import com.verdikt.verdikt_backend.repository.RoomQuestionRepository;
 import com.verdikt.verdikt_backend.repository.RoomRepository;
+import com.verdikt.verdikt_backend.service.BusinessMetricsService;
 import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.time.Instant;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class RoomService {
 
-    private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I confusion
+    private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int CODE_LENGTH = 6;
     private static final int MAX_PLAYERS = 25;
     private static final SecureRandom RANDOM = new SecureRandom();
     private final WebSocketEventPublisher eventPublisher;
     private final RoomRepository roomRepository;
     private final PlayerRepository playerRepository;
+    private final RoomQuestionRepository roomQuestionRepository;
+    private final BusinessMetricsService businessMetricsService;
     private final CacheManager cacheManager;
 
     private void evictRoomCache(String code) {
@@ -64,36 +71,29 @@ public class RoomService {
         }
 
         Room room = Room.builder()
-        .code(code)
-        .name(roomName)
-        .voteMode(request.getVoteMode())
-        .maxPlayers(MAX_PLAYERS)
-        .maxQuestions(questionCount)
-        .questionDurationSeconds(request.getQuestionDurationSeconds())
-        .build();
-
-        log.debug("Creating room entity: code={} name={} voteMode={} questionDurationSeconds={}",
-                room.getCode(), room.getName(), room.getVoteMode(), room.getQuestionDurationSeconds());
-        room = roomRepository.save(room);
-        log.debug("Room persisted: id={} code={} status={} voteMode={} hostPlayerId={}",
-                room.getId(), room.getCode(), room.getStatus(), room.getVoteMode(), room.getHostPlayerId());
+                .code(code)
+                .name(roomName)
+                .voteMode(request.getVoteMode())
+                .maxPlayers(MAX_PLAYERS)
+                .maxQuestions(questionCount)
+                .questionDurationSeconds(request.getQuestionDurationSeconds())
+                .build();
 
         Player host = Player.builder()
-        .room(room)
-        .name(hostName)
-        .isHost(true)
-        .isOriginalHost(true)
-        .build();
+                .room(room)
+                .name(hostName)
+                .isHost(true)
+                .isOriginalHost(true)
+                .build();
 
-        log.debug("Creating host entity: roomId={} hostName={}", room.getId(), host.getName());
-        host = playerRepository.save(host);
-        log.debug("Host persisted: id={} token={} roomId={}", host.getId(), host.getToken(), room.getId());
+        room.getPlayers().add(host);
 
+        room = roomRepository.save(room);
         room.setHostPlayerId(host.getId());
         roomRepository.save(room);
-        log.debug("Room host assigned: roomId={} hostPlayerId={}", room.getId(), room.getHostPlayerId());
 
         log.info("Room created: code={} name={} host={}", room.getCode(), room.getName(), host.getName());
+        businessMetricsService.incrementRoomsCreated();
 
         return toRoomResponse(room, List.of(host), host.getToken());
     }
@@ -105,7 +105,8 @@ public class RoomService {
             throw new IllegalArgumentException("Player name is required.");
         }
 
-        Room room = roomRepository.findByCode(request.getCode().toUpperCase())
+        String roomCode = request.getCode().trim().toUpperCase(java.util.Locale.ROOT);
+        Room room = roomRepository.findByCodeForUpdate(roomCode)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found. Check the code and try again."));
 
         validateRoomIsJoinable(room);
@@ -128,14 +129,21 @@ public class RoomService {
 
         log.info("Player joined: room={} player={}", room.getCode(), player.getName());
         eventPublisher.publishPlayerJoined(room.getId(), player.getId(), player.getName());
+
         List<Player> allPlayers = playerRepository.findAllByRoomId(room.getId());
-        return toRoomResponse(room, allPlayers, player.getToken());
+        RoomResponse response = toRoomResponse(room, allPlayers, player.getToken());
+
+        evictRoomCache(room.getCode());
+
+        businessMetricsService.incrementPlayersJoined();
+
+        return response;
     }
 
     @Transactional
     public RoomResponse rejoinRoom(UUID token) {
-        Player player = playerRepository.findByToken(token)
-                .orElseThrow(() -> new PlayerNotFoundException("Session not found. Please join again."));
+        Player player = playerRepository.findByTokenAndExpiresAtAfter(token, java.time.LocalDateTime.now())
+                .orElseThrow(() -> new PlayerNotFoundException("Session not found or expired. Please join again."));
 
         Room room = player.getRoom();
         validateRoomNotExpired(room);
@@ -149,7 +157,15 @@ public class RoomService {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
 
-        List<Player> players = playerRepository.findAllByRoomId(roomId).stream()
+        List<Player> allPlayers = playerRepository.findAllByRoomId(roomId);
+        allPlayers.stream()
+                .filter(Player::isHost)
+                .forEach(player -> {
+                    player.setHost(false);
+                    playerRepository.save(player);
+                });
+
+        List<Player> players = allPlayers.stream()
                 .filter(Player::isActive)
                 .sorted((a, b) -> a.getJoinedAt().compareTo(b.getJoinedAt()))
                 .collect(Collectors.toList());
@@ -171,20 +187,18 @@ public class RoomService {
     private void validateRoomIsJoinable(Room room) {
         validateRoomNotExpired(room);
         if (room.getStatus() != RoomStatus.WAITING) {
-            throw new InvalidRoomStateException("This game has already started.");
+            throw new InvalidRoomStateException("ROOM_ALREADY_STARTED", "This game has already started.");
         }
     }
 
     private void validateRoomNotExpired(Room room) {
         Instant expiresAt = room.getExpiresAt();
         Instant now = Instant.now();
-        log.info("DEBUG expiry check: status={} expiresAt={} now={} isBefore={}",
-                room.getStatus(), expiresAt, now,
-                expiresAt != null && expiresAt.isBefore(now));
         if (room.getStatus() == RoomStatus.EXPIRED || (expiresAt != null && expiresAt.isBefore(now))) {
             throw new RoomExpiredException("This room has expired.");
         }
     }
+
     private String generateUniqueCode() {
         String code;
         do {
@@ -199,28 +213,31 @@ public class RoomService {
 
     private String sanitize(String input) {
         if (input == null) return "";
-        return input.trim().replaceAll("[<>\"'%;()&+]", "");
+        return input.trim().replaceAll("\\p{Cntrl}", "");
     }
 
     private RoomResponse toRoomResponse(Room room, List<Player> players, UUID playerToken) {
-    return RoomResponse.builder()
-            .id(room.getId())
-            .code(room.getCode())
-            .name(room.getName())
-            .status(room.getStatus())
-            .voteMode(room.getVoteMode())
-            .maxPlayers(room.getMaxPlayers())
-            .maxQuestions(room.getMaxQuestions())
-            .questionDurationSeconds(room.getQuestionDurationSeconds())
-            .players(players.stream().map(this::toPlayerResponse).collect(Collectors.toList()))
-            .playerToken(playerToken)
-            .build();
-}
+        List<PlayerResponse> playerResponses = players.stream()
+                .map(this::toPlayerResponse)
+                .collect(Collectors.toList());
+
+        return RoomResponse.builder()
+                .id(room.getId())
+                .code(room.getCode())
+                .name(room.getName())
+                .status(room.getStatus())
+                .voteMode(room.getVoteMode())
+                .maxPlayers(room.getMaxPlayers())
+                .maxQuestions(room.getMaxQuestions())
+                .questionDurationSeconds(room.getQuestionDurationSeconds())
+                .players(playerResponses)
+                .playerToken(playerToken)
+                .build();
+    }
 
     private PlayerResponse toPlayerResponse(Player player) {
         return PlayerResponse.builder()
                 .id(player.getId())
-                .token(player.getToken())
                 .name(player.getName())
                 .isHost(player.isHost())
                 .isActive(player.isActive())
@@ -228,27 +245,27 @@ public class RoomService {
     }
 
     @Transactional
-public void handleHostReconnect(UUID roomId, Player reconnectingPlayer) {
-    if (!reconnectingPlayer.isOriginalHost()) return; // only original host gets auto-restored
+    public void handleHostReconnect(UUID roomId, Player reconnectingPlayer) {
+        if (!reconnectingPlayer.isOriginalHost()) return;
 
-    List<Player> players = playerRepository.findAllByRoomId(roomId);
-    for (Player p : players) {
-        if (p.isHost() && !p.getId().equals(reconnectingPlayer.getId())) {
-            p.setHost(false);
-            playerRepository.save(p);
+        List<Player> players = playerRepository.findAllByRoomId(roomId);
+        for (Player p : players) {
+            if (p.isHost() && !p.getId().equals(reconnectingPlayer.getId())) {
+                p.setHost(false);
+                playerRepository.save(p);
+            }
         }
+
+        reconnectingPlayer.setHost(true);
+        playerRepository.save(reconnectingPlayer);
+
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+        room.setHostPlayerId(reconnectingPlayer.getId());
+        roomRepository.save(room);
+
+        evictRoomCache(room.getCode());
+
+        log.info("Host restored: room={} originalHost={}", room.getCode(), reconnectingPlayer.getName());
     }
-
-    reconnectingPlayer.setHost(true);
-    playerRepository.save(reconnectingPlayer);
-
-    Room room = roomRepository.findById(roomId)
-            .orElseThrow(() -> new RoomNotFoundException("Room not found."));
-    room.setHostPlayerId(reconnectingPlayer.getId());
-    roomRepository.save(room);
-
-    evictRoomCache(room.getCode());
-
-    log.info("Host restored: room={} originalHost={}", room.getCode(), reconnectingPlayer.getName());
-}
 }

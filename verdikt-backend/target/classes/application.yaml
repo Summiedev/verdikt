@@ -16,25 +16,34 @@ spring:
       validation-timeout: 5000
       leak-detection-threshold: 30000
 
-  sql:
-    init:
-      mode: always
-
   jpa:
-    defer-datasource-initialization: true
-    hibernate:
-      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
-    show-sql: true
+    defer-datasource-initialization: false
+    open-in-view: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
+        format_sql: false
         jdbc:
           time_zone: UTC
+        default_schema: public
+    show-sql: false
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+    deserialization:
+      fail-on-unknown-properties: false
 
   flyway:
-    enabled: ${APP_FLYWAY_ENABLED:false}
+    enabled: true
     locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+  sql:
+    init:
+      mode: never
 
   data:
     redis:
@@ -57,7 +66,38 @@ spring:
       use-key-prefix: true
       key-prefix: "verdikt:"
 
+server:
+  shutdown: graceful
+  tomcat:
+    max-swallow-size: -1
+    threads:
+      max: 200
+      min-spare: 10
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,caches,flyway
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis,websocketBroker
   metrics:
     enable:
       http:
@@ -71,18 +111,58 @@ management:
         cpu: true
       web:
         sessions: true
+      cache: true
+      jdbc: true
     export:
       prometheus:
         enabled: true
 
 app:
   allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,https://verdikt.online,https://www.verdikt.online}
+  token:
+    secret: ${APP_TOKEN_SECRET:change-me-in-production-use-a-real-secret}
   rate-limit:
     room-creation-ttl-minutes: 120
     vote-ttl-minutes: 5
+    global-capacity: 200
+    global-refill-rate: 200
+    global-refill-period: 1
+  websocket:
+    max-text-message-size: 65536
+    max-binary-message-size: 65536
+    send-timeout: 5000
 
+logging:
+  level:
+    root: INFO
+    com.verdikt: INFO
+    org.springframework.web: WARN
+    org.hibernate.SQL: WARN
+    org.springframework.cache: INFO
+    org.springframework.data.redis: INFO
+    org.springframework.messaging: INFO
+    org.springframework.scheduling: INFO
+    org.springframework.transaction: INFO
+    io.lettuce: WARN
+    com.zaxxer.hikari: INFO
+    org.postgresql: WARN
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  sql:
+    init:
+      mode: always
+  jpa:
+    hibernate:
+      ddl-auto: update
+  flyway:
+    enabled: false
 logging:
   level:
     root: INFO
     com.verdikt: DEBUG
     org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG

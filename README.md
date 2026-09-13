@@ -37,7 +37,7 @@ These are the current app screens from the latest build:
 Located in `verdikt-backend/`
 
 **Stack**:
-- Java 17+
+- Java 21+
 - Spring Boot 3.x with WebSocket/STOMP over SockJS
 - Spring Data JPA with PostgreSQL
 - Maven for build
@@ -86,8 +86,8 @@ Located in `verdikt-frontend/`
 
 ### Prerequisites
 
-- **Backend**: Java 17+, Maven 3.8+, PostgreSQL 12+
-- **Frontend**: Node.js 18+, npm 9+
+- **Backend**: Java 21, Maven 3.9+, PostgreSQL 12+
+- **Frontend**: Node.js 22+, npm 9+
 
 ### Database Setup
 
@@ -96,7 +96,7 @@ Located in `verdikt-frontend/`
    CREATE DATABASE verdikt;
    ```
 
-2. The backend will auto-create tables on first run (Hibernate DDL `update` mode).
+2. Local development can use Hibernate DDL `update` by running with the `local` profile. Production uses Flyway migrations and Hibernate `validate`; it never mutates the schema implicitly.
 
 ### Running the Backend
 
@@ -106,14 +106,17 @@ cd verdikt-backend
 # Build and run tests
 ./mvnw clean verify
 
-# Start the server (default: http://localhost:8080)
-./mvnw spring-boot:run
+# Start the server locally (default: http://localhost:8080)
+SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
 
 Set environment variables to override defaults:
 - `SPRING_DATASOURCE_URL`: PostgreSQL JDBC URL
 - `SPRING_DATASOURCE_USERNAME`: DB user
 - `SPRING_DATASOURCE_PASSWORD`: DB password
+- `APP_TOKEN_SECRET`: session-token signing/validation secret used by production configuration
+- `APP_ALLOWED_ORIGINS`: comma-separated explicit browser origins
+- `SPRING_REDIS_HOST` and `SPRING_REDIS_PORT`: Redis connection
 
 ### Running the Frontend
 
@@ -561,33 +564,25 @@ npm run build
 
 ## Deployment
 
-### Backend
+The repository includes a production Docker Compose topology and a GitHub Actions workflow at `.github/workflows/ci-cd.yml`. The recommended launch setup is one private VPS running Docker Compose, with HTTPS terminating at the host reverse proxy and forwarding to `127.0.0.1:3000`. PostgreSQL and Redis are only reachable on the private Docker network.
 
-Use any Java-compatible hosting (Heroku, AWS, DigitalOcean, etc.):
-
-```bash
-# Build a JAR
-./mvnw clean package
-
-# Run the JAR
-java -jar target/verdikt_backend-0.0.1-SNAPSHOT.jar
-```
-
-Ensure your PostgreSQL instance is reachable and credentials are set via environment variables.
-
-### Frontend
-
-Build and deploy the static site:
+### One-time VPS setup
 
 ```bash
-cd verdikt-frontend
-npm run build
-# Outputs to dist/
+git clone https://github.com/Summiedev/verdikt.git /opt/verdikt
+cd /opt/verdikt
+cp .env.example .env
+# Edit .env and replace every replace-with value with a long random secret.
+docker compose up -d --build
 ```
 
-Deploy `dist/` to any static host (Netlify, Vercel, GitHub Pages, AWS S3, etc.).
+The `.env` file must contain `SPRING_PROFILES_ACTIVE=prod`, explicit database credentials, `APP_TOKEN_SECRET`, `APP_ALLOWED_ORIGINS`, and the Redis host. Never commit it. The first production boot runs Flyway; back up an existing database and inspect `flyway_schema_history` before the first migration. `V0__create_schema.sql` is for fresh databases; the production baseline preserves existing schemas at version 1.
 
-**Update `VITE_API_URL`**: Point frontend to your deployed backend API.
+### GitHub Actions deployment
+
+Create a `production` environment in GitHub and add these encrypted secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH` (`/opt/verdikt`), `DEPLOY_SSH_KEY`, and `DEPLOY_KNOWN_HOSTS`. Generate the last value on a trusted machine with `ssh-keyscan -H YOUR_SERVER_IP` and paste the complete output into the secret. Pull requests run frontend lint/build and backend verification. A push to `main` deploys only after both jobs pass, then checks `https://verdikt.online/`. Revert a bad release with a normal `git revert` commit and push it to `main`.
+
+The frontend is built into the Docker image. Leave `VITE_API_URL` blank for the same-origin VPS topology so `/api` and `/ws` pass through the frontend proxy. Use an explicit production API URL only when the backend is hosted separately.
 
 ---
 
@@ -621,8 +616,9 @@ The WebSocket connection broadcasts vote state updates to all players as they vo
 - Check port 8080 is not in use
 
 ### Frontend won't connect to backend
-- Ensure `VITE_API_URL` points to your backend
-- Check CORS is enabled on the backend (it is by default)
+- Leave `VITE_API_URL` blank when frontend and backend share `verdikt.online`; otherwise set the explicit backend origin
+- Set `APP_ALLOWED_ORIGINS` to the exact frontend origin(s)
+- Configure the public VPS reverse proxy to overwrite `X-Forwarded-For` with the actual client address. Do not append an untrusted browser-supplied value; the backend uses this header for IP-based abuse limits.
 - Verify the backend server is running
 
 ### WebSocket connection fails

@@ -5,6 +5,10 @@ import com.verdikt.verdikt_backend.dto.response.CurrentQuestionResponse;
 import com.verdikt.verdikt_backend.dto.response.QuestionPreviewResponse;
 import com.verdikt.verdikt_backend.service.GameService;
 import com.verdikt.verdikt_backend.service.PlayerService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import org.springframework.validation.annotation.Validated;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
+@Validated
 @RequestMapping("/api/rooms/{roomId}/game")
 @RequiredArgsConstructor
 public class GameController {
@@ -24,7 +29,7 @@ public class GameController {
     public ResponseEntity<Void> startGame(
             @PathVariable UUID roomId,
             @RequestHeader("X-Player-Token") UUID playerToken,
-            @RequestBody(required = false) StartGameRequest request
+            @Valid @RequestBody(required = false) StartGameRequest request
     ) {
         gameService.startGame(roomId, playerToken, request);
         return ResponseEntity.ok().build();
@@ -59,7 +64,7 @@ public ResponseEntity<Void> endGame(
     @GetMapping("/preview-questions")
 public ResponseEntity<List<QuestionPreviewResponse>> previewQuestions(
         @PathVariable UUID roomId,
-        @RequestParam(defaultValue = "15") int count
+        @RequestParam(defaultValue = "15") @Min(1) @Max(50) int count
 ) {
     return ResponseEntity.ok()
             .cacheControl(org.springframework.http.CacheControl.noStore())

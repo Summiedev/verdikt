@@ -10,7 +10,6 @@ import java.util.UUID;
 @Builder
 public class PlayerResponse {
     private UUID id;
-    private UUID token;
     private String name;
 
     @JsonProperty("isHost")

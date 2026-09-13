@@ -15,6 +15,7 @@ import com.verdikt.verdikt_backend.repository.PlayerRepository;
 import com.verdikt.verdikt_backend.repository.QuestionRepository;
 import com.verdikt.verdikt_backend.repository.RoomQuestionRepository;
 import com.verdikt.verdikt_backend.repository.RoomRepository;
+import com.verdikt.verdikt_backend.service.BusinessMetricsService;
 import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
 
 import lombok.RequiredArgsConstructor;
@@ -31,8 +32,8 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.IntStream;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -50,6 +51,7 @@ public class GameService {
     private final RoomQuestionRepository roomQuestionRepository;
     private final PlayerRepository playerRepository;
     private final CacheManager cacheManager;
+    private final BusinessMetricsService businessMetricsService;
 
     private void evictRoomCache(String code) {
         if (code != null && cacheManager.getCache(CacheConstants.ROOM_BY_CODE) != null) {
@@ -58,68 +60,83 @@ public class GameService {
     }
 
     @CacheEvict(value = CacheConstants.NON_CUSTOM_QUESTIONS, key = "'all'")
+    @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#roomId")
     @Transactional
     public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
-        Room room = roomRepository.findById(roomId)
+        Room room = roomRepository.findByIdForUpdate(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
 
+        ensureRoomActive(room);
         evictRoomCache(room.getCode());
 
-    if (room.getStatus() != RoomStatus.WAITING) {
-        throw new InvalidRoomStateException("Game has already started or finished.");
+        Player host = requirePlayerInRoom(hostToken, roomId);
+        if (!host.isHost() || !host.isActive() || !host.getId().equals(room.getHostPlayerId())) {
+            throw new InvalidRoomStateException("NOT_HOST", "Only the host can start the game.");
+        }
+
+        if (room.getStatus() != RoomStatus.WAITING) {
+            throw new InvalidRoomStateException("ROOM_ALREADY_STARTED", "Game has already started or finished.");
+        }
+
+        long activePlayers = playerRepository.findAllByRoomId(roomId).stream()
+                .filter(Player::isActive)
+                .count();
+        if (activePlayers < 2) {
+            throw new InvalidRoomStateException("INVALID_ROOM_STATE", "At least two active players are required to start.");
+        }
+
+        List<Question> finalQuestions = resolveQuestionsForGame(room, request);
+
+        List<RoomQuestion> roomQuestions = IntStream.range(0, finalQuestions.size())
+                .mapToObj(i -> RoomQuestion.builder()
+                        .room(room)
+                        .question(finalQuestions.get(i))
+                        .orderIndex(i)
+                        .isActive(i == 0)
+                        .build())
+                .collect(Collectors.toList());
+        roomQuestionRepository.saveAll(roomQuestions);
+
+        room.setStatus(RoomStatus.IN_PROGRESS);
+        room.setCurrentQuestionStartedAt(Instant.now());
+        roomRepository.save(room);
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    eventPublisher.publishGameStarted(roomId);
+                }
+            });
+        } else {
+            eventPublisher.publishGameStarted(roomId);
+        }
+
+        businessMetricsService.incrementGamesStarted();
+
+        log.info("Game started: room={} questionCount={}", room.getCode(), finalQuestions.size());
     }
-
-    List<Question> finalQuestions = resolveQuestionsForGame(room, request);
-
-    for (int i = 0; i < finalQuestions.size(); i++) {
-        RoomQuestion rq = RoomQuestion.builder()
-                .room(room)
-                .question(finalQuestions.get(i))
-                .orderIndex(i)
-                .isActive(i == 0)
-                .build();
-        roomQuestionRepository.save(rq);
-    }
-
-    // questionDurationSeconds is already set on Room from creation — no change needed here
-    room.setStatus(RoomStatus.IN_PROGRESS);
-    room.setCurrentQuestionStartedAt(Instant.now());
-    roomRepository.save(room);
-
-    if (TransactionSynchronizationManager.isSynchronizationActive()) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                eventPublisher.publishGameStarted(roomId);
-            }
-        });
-    } else {
-        eventPublisher.publishGameStarted(roomId);
-    }
-
-    log.info("Game started: room={} questionCount={}", room.getCode(), finalQuestions.size());
-}
-    @CacheEvict(value = CacheConstants.ACTIVE_QUESTION, key = "#roomId")
+    @CacheEvict(value = {CacheConstants.ACTIVE_QUESTION, CacheConstants.VOTE_STATE}, key = "#roomId")
     @Transactional
     public CurrentQuestionResponse advanceToNextQuestion(UUID roomId, UUID playerToken) {
-        Room room = roomRepository.findById(roomId)
+        Room room = roomRepository.findByIdForUpdate(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
 
+        ensureRoomActive(room);
         evictRoomCache(room.getCode());
 
-        Player requester = playerRepository.findByToken(playerToken)
-                .orElseThrow(() -> new PlayerNotFoundException("Player session not found."));
+        Player requester = requirePlayerInRoom(playerToken, roomId);
 
-        if (!requester.isHost()) {
-            throw new InvalidRoomStateException("Only the host can advance to the next question.");
+        if (!requester.isHost() || !requester.isActive() || !requester.getId().equals(room.getHostPlayerId())) {
+            throw new InvalidRoomStateException("NOT_HOST", "Only the host can advance to the next question.");
         }
 
         if (room.getStatus() != RoomStatus.IN_PROGRESS) {
-            throw new InvalidRoomStateException("Game is not in progress.");
+            throw new InvalidRoomStateException("GAME_ALREADY_ENDED", "Game is not in progress.");
         }
 
         RoomQuestion current = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId)
-                .orElseThrow(() -> new InvalidRoomStateException("No active question found."));
+                .orElseThrow(() -> new InvalidRoomStateException("QUESTION_NOT_ACTIVE", "No active question found."));
 
         current.setActive(false);
         current.setAnswered(true);
@@ -148,6 +165,7 @@ public class GameService {
     }
 
     @CacheEvict(value = CacheConstants.ROOM_BY_CODE, key = "#room.code")
+    @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#room.id")
     @Transactional
     public void endGame(Room room) {
         room.setStatus(RoomStatus.FINISHED);
@@ -157,35 +175,38 @@ public class GameService {
     }
     @Transactional(readOnly = true)
     public List<QuestionPreviewResponse> previewRandomQuestions(int count) {
-    if (count <= 0) {
-        throw new IllegalArgumentException("Question count must be at least 1.");
-    }
+        if (count <= 0) {
+            throw new IllegalArgumentException("Question count must be at least 1.");
+        }
 
-    List<Question> questions = questionRepository.findRandomQuestions(count);
-    if (questions.isEmpty()) {
-        throw new NoQuestionsAvailableException("No built-in questions exist yet. Add your own questions to start.");
+        List<Question> questions = questionRepository.findRandomQuestions(count);
+        if (questions.isEmpty()) {
+            throw new NoQuestionsAvailableException("No built-in questions exist yet. Add your own questions to start.");
+        }
+        return questions.stream()
+                .map(q -> QuestionPreviewResponse.builder()
+                        .id(q.getId())
+                        .text(q.getText())
+                        .spiceLevel(q.getSpiceLevel().name())
+                        .build())
+                .collect(Collectors.toList());
     }
-    return questions.stream()
-            .map(q -> QuestionPreviewResponse.builder()
-                    .id(q.getId())
-                    .text(q.getText())
-                    .spiceLevel(q.getSpiceLevel().name())
-                    .build())
-            .collect(Collectors.toList());
-}
     @Cacheable(value = CacheConstants.ACTIVE_QUESTION, key = "#roomId")
     @Transactional(readOnly = true)
     public CurrentQuestionResponse getCurrentQuestion(UUID roomId) {
         RoomQuestion rq = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId)
-                .orElseThrow(() -> new InvalidRoomStateException("No active question right now."));
+                .orElseThrow(() -> new InvalidRoomStateException("QUESTION_NOT_ACTIVE", "No active question right now."));
         return toCurrentQuestionResponse(roomId, rq);
     }
 
     @Transactional(readOnly = true)
     public CurrentQuestionResponse toCurrentQuestionResponse(UUID roomId, RoomQuestion rq) {
+        Room room = rq.getRoom();
+        if (room == null) {
+            room = roomRepository.findById(roomId)
+                    .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+        }
         int total = roomQuestionRepository.countByRoomId(roomId);
-        Room room = roomRepository.findById(roomId)
-                .orElseThrow(() -> new RoomNotFoundException("Room not found."));
         return CurrentQuestionResponse.builder()
                 .questionId(rq.getQuestion().getId())
                 .text(rq.getQuestion().getText())
@@ -194,27 +215,27 @@ public class GameService {
                 .startedAt(room.getCurrentQuestionStartedAt())
                 .build();
     }
-    @CacheEvict(value = CacheConstants.ACTIVE_QUESTION, key = "#roomId")
+    @CacheEvict(value = {CacheConstants.ACTIVE_QUESTION, CacheConstants.VOTE_STATE}, key = "#roomId")
     @Transactional
-public void endGameEarly(UUID roomId, UUID hostToken) {
-        Room room = roomRepository.findById(roomId)
+    public void endGameEarly(UUID roomId, UUID hostToken) {
+        Room room = roomRepository.findByIdForUpdate(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
 
+        ensureRoomActive(room);
         evictRoomCache(room.getCode());
 
-    Player requester = playerRepository.findByToken(hostToken)
-            .orElseThrow(() -> new PlayerNotFoundException("Player session not found."));
+        Player requester = requirePlayerInRoom(hostToken, roomId);
 
-    if (!requester.isHost()) {
-        throw new InvalidRoomStateException("Only the host can end the game.");
+        if (!requester.isHost() || !requester.isActive() || !requester.getId().equals(room.getHostPlayerId())) {
+            throw new InvalidRoomStateException("NOT_HOST", "Only the host can end the game.");
+        }
+
+        if (room.getStatus() != RoomStatus.IN_PROGRESS) {
+            throw new InvalidRoomStateException("GAME_ALREADY_ENDED", "Game isn't in progress.");
+        }
+
+        endGame(room);
     }
-
-    if (room.getStatus() != RoomStatus.IN_PROGRESS) {
-        throw new InvalidRoomStateException("Game isn't in progress.");
-    }
-
-    endGame(room);
-}
 
     private List<Question> pickRandomQuestions(List<Question> pool, int count) {
         List<Question> shuffled = new java.util.ArrayList<>(pool);
@@ -231,8 +252,16 @@ public void endGameEarly(UUID roomId, UUID hostToken) {
         List<Question> finalQuestions = new ArrayList<>();
 
         if (request != null && request.getSelectedQuestionIds() != null) {
-            for (UUID id : new java.util.LinkedHashSet<>(request.getSelectedQuestionIds())) {
-                questionRepository.findById(id).ifPresent(question -> addUnique(finalQuestions, question));
+            List<UUID> ids = request.getSelectedQuestionIds().stream()
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+
+            if (!ids.isEmpty()) {
+                List<Question> selected = questionRepository.findAllByIds(ids);
+                for (Question q : selected) {
+                    addUnique(finalQuestions, q);
+                }
             }
         }
 
@@ -255,12 +284,12 @@ public void endGameEarly(UUID roomId, UUID hostToken) {
         }
 
         if (!finalQuestions.isEmpty()) {
-            return finalQuestions;
+            return finalQuestions.size() > desiredQuestionCount(room)
+                    ? finalQuestions.subList(0, desiredQuestionCount(room))
+                    : finalQuestions;
         }
 
-        int desiredCount = room.getMaxQuestions() != null && room.getMaxQuestions() > 0
-                ? room.getMaxQuestions()
-                : DEFAULT_QUESTION_COUNT;
+        int desiredCount = desiredQuestionCount(room);
         List<Question> randomQuestions = questionRepository.findRandomQuestions(desiredCount);
         if (randomQuestions.isEmpty()) {
             throw new NoQuestionsAvailableException("No built-in questions exist yet. Add your own questions to start.");
@@ -273,6 +302,31 @@ public void endGameEarly(UUID roomId, UUID hostToken) {
         boolean alreadyAdded = target.stream().anyMatch(existing -> existing.getId().equals(candidate.getId()));
         if (!alreadyAdded) {
             target.add(candidate);
+        }
+    }
+
+    private int desiredQuestionCount(Room room) {
+        return room.getMaxQuestions() != null && room.getMaxQuestions() > 0
+                ? room.getMaxQuestions()
+                : DEFAULT_QUESTION_COUNT;
+    }
+
+    private Player requirePlayerInRoom(UUID token, UUID roomId) {
+        if (token == null) {
+            throw new PlayerNotFoundException("Player session not found.");
+        }
+        Player player = playerRepository.findByTokenAndExpiresAtAfter(token, LocalDateTime.now())
+                .orElseThrow(() -> new PlayerNotFoundException("Player session not found or expired."));
+        if (player.getRoom() == null || !roomId.equals(player.getRoom().getId())) {
+            throw new PlayerNotFoundException("Player session does not belong to this room.");
+        }
+        return player;
+    }
+
+    private void ensureRoomActive(Room room) {
+        if (room.getStatus() == RoomStatus.EXPIRED
+                || (room.getExpiresAt() != null && room.getExpiresAt().isBefore(Instant.now()))) {
+            throw new RoomExpiredException("This room has expired.");
         }
     }
 }

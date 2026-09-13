@@ -14,6 +14,7 @@ import com.verdikt.verdikt_backend.repository.RoomQuestionRepository;
 import com.verdikt.verdikt_backend.repository.RoomRepository;
 import com.verdikt.verdikt_backend.repository.VoteRepository;
 import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
+import com.verdikt.verdikt_backend.service.BusinessMetricsService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,6 +48,8 @@ class VoteServiceTest {
     private RoomQuestionRepository roomQuestionRepository;
     @Mock
     private WebSocketEventPublisher eventPublisher;
+    @Mock
+    private BusinessMetricsService businessMetricsService;
 
     @InjectMocks
     private VoteService voteService;
@@ -75,11 +79,11 @@ class VoteServiceTest {
         request.setQuestionId(questionId);
         request.setVotedForPlayerIds(List.of(targetPlayerId));
 
-        when(roomRepository.findById(roomId)).thenReturn(Optional.of(room));
-        when(playerRepository.findByToken(voterToken)).thenReturn(Optional.of(voter));
+        when(roomRepository.findByIdForUpdate(roomId)).thenReturn(Optional.of(room));
+        when(playerRepository.findByTokenAndExpiresAtAfter(eq(voterToken), any(LocalDateTime.class))).thenReturn(Optional.of(voter));
         when(questionRepository.findById(questionId)).thenReturn(Optional.of(question));
         when(roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId)).thenReturn(Optional.of(activeQuestion));
-        when(playerRepository.findAllById(any())).thenReturn(List.of(targetPlayer));
+        when(playerRepository.findAllByIdWithRoom(any())).thenReturn(List.of(targetPlayer));
         when(voteRepository.findVotedForIdsByRoomAndQuestionAndVoter(roomId, questionId, voterId)).thenReturn(List.of());
         when(voteRepository.save(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -89,7 +93,7 @@ class VoteServiceTest {
                 .voter(voter)
                 .votedFor(targetPlayer)
                 .build();
-        when(voteRepository.findAllByRoomIdAndQuestionId(roomId, questionId)).thenReturn(List.of(emittedVote));
+        when(voteRepository.findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(roomId, questionId)).thenReturn(List.of(emittedVote));
 
         List<Map<String, Object>> authoritativeState = voteService.castVotes(roomId, voterToken, request);
 
@@ -124,14 +128,14 @@ class VoteServiceTest {
         request.setQuestionId(questionId);
         request.setVotedForPlayerIds(List.of(firstTargetId, secondTargetId));
 
-        when(roomRepository.findById(roomId)).thenReturn(Optional.of(room));
-        when(playerRepository.findByToken(voterToken)).thenReturn(Optional.of(voter));
+        when(roomRepository.findByIdForUpdate(roomId)).thenReturn(Optional.of(room));
+        when(playerRepository.findByTokenAndExpiresAtAfter(eq(voterToken), any(LocalDateTime.class))).thenReturn(Optional.of(voter));
         when(questionRepository.findById(questionId)).thenReturn(Optional.of(question));
         when(roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId)).thenReturn(Optional.of(activeQuestion));
-        when(playerRepository.findAllById(any())).thenReturn(List.of(firstTarget, secondTarget));
+        when(playerRepository.findAllByIdWithRoom(any())).thenReturn(List.of(firstTarget, secondTarget));
         when(voteRepository.findVotedForIdsByRoomAndQuestionAndVoter(roomId, questionId, voterId)).thenReturn(List.of());
         when(voteRepository.save(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(voteRepository.findAllByRoomIdAndQuestionId(roomId, questionId)).thenReturn(List.of(
+        when(voteRepository.findAllByRoomIdAndQuestionIdWithVoterAndVotedFor(roomId, questionId)).thenReturn(List.of(
                 Vote.builder().room(room).question(question).voter(voter).votedFor(firstTarget).build(),
                 Vote.builder().room(room).question(question).voter(voter).votedFor(secondTarget).build()
         ));

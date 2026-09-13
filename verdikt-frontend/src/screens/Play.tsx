@@ -3,9 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Button from '../components/Button';
 import HourglassIcon from '../components/icons/HourglassIcon';
 import AlarmIcon from '../components/icons/AlarmIcon';
+import Loader from '../components/Loader';
+import ConnectionBanner from '../components/ConnectionBanner';
+import Toast from '../components/Toast';
 import { loadSession } from '../session';
 import { useSocket } from '../useSocket';
 import './Play.css';
+import { apiRequest, ApiError } from '../api/client';
 
 interface PlayerResult {
   id: string;
@@ -20,6 +24,16 @@ interface Question {
   questionIndex: number;
   totalQuestions: number;
   startedAt?: string;   // ISO string from backend
+}
+
+interface CurrentQuestionPayload {
+  question?: { questionId?: string; text?: string; startedAt?: string };
+  questionId?: string;
+  id?: string;
+  text?: string;
+  questionIndex?: number;
+  totalQuestions?: number;
+  startedAt?: string;
 }
 
 export default function Play() {
@@ -39,6 +53,9 @@ export default function Play() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
+  const [nexting, setNexting] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [endGameError, setEndGameError] = useState('');
   const [roomExpired, setRoomExpired] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
@@ -52,7 +69,7 @@ export default function Play() {
     selectedRef.current = selected;
   }, [selected]);
 
-  function loadCachedSelection(questionId: string): Set<string> {
+  const loadCachedSelection = useCallback((questionId: string): Set<string> => {
     if (!selectionCacheKey) return new Set();
     try {
       const raw = sessionStorage.getItem(`${selectionCacheKey}:${questionId}`);
@@ -63,7 +80,7 @@ export default function Play() {
     } catch {
       return new Set();
     }
-  }
+  }, [selectionCacheKey]);
 
   function saveCachedSelection(questionId: string, selection: Set<string>) {
     if (!selectionCacheKey) return;
@@ -91,12 +108,10 @@ export default function Play() {
     const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
     async function hydrateVotes(currentMap: Map<string, PlayerResult>, currentQuestionId?: string) {
-      const vRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/rooms/${session!.roomId}/votes/current`,
-        { headers: { 'X-Player-Token': session!.playerToken } }
+      const existingVotes = await apiRequest<{ voterId?: string; voterName?: string; votedForId: string }[]>(
+        `/api/rooms/${session!.roomId}/votes/current`,
+        { playerToken: session!.playerToken },
       );
-      const existingVotes: { voterId?: string; voterName?: string; votedForId: string }[] =
-        vRes.ok ? await vRes.json() : [];
 
       const map = new Map(currentMap);
       const myVotedFor = new Set<string>();
@@ -132,41 +147,31 @@ export default function Play() {
       if (!session || cancelled) return;
       try {
         // 1. current question
-        const qRes = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/current-question`,
-          { headers: { 'X-Player-Token': session.playerToken } }
-        );
         if (cancelled) return;
-        if (qRes.status === 410) { setRoomExpired(true); return; }
-        if (!qRes.ok) {
-          const err = new Error('failed to load question') as Error & { status?: number };
-          err.status = qRes.status;
-          throw err;
-        }
-        const qData = await qRes.json();
+        const qData = await apiRequest<CurrentQuestionPayload>(
+          `/api/rooms/${session.roomId}/game/current-question`,
+          { playerToken: session.playerToken },
+        );
+        const nestedQuestion = qData.question;
+        const questionId = nestedQuestion?.questionId ?? qData.questionId ?? qData.id;
+        const questionText = nestedQuestion?.text ?? qData.text;
+        if (!questionId || !questionText) throw new Error('The room returned an incomplete question.');
         const q: Question = {
-          id: qData.question?.questionId ?? qData.questionId ?? qData.id,
-          text: qData.question?.text ?? qData.text,
+          id: questionId,
+          text: questionText,
           questionIndex: qData.questionIndex ?? 1,
           totalQuestions: qData.totalQuestions ?? 10,
-          startedAt: qData.startedAt ?? qData.question?.startedAt,
+          startedAt: qData.startedAt ?? nestedQuestion?.startedAt,
         };
         setQuestion(q);
         setTimeLeft(computeTimeLeft(q.startedAt, session.questionDurationSeconds));
 
         // 2. player list
-        const rRes = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/rooms/rejoin`,
-          { headers: { 'X-Player-Token': session.playerToken } }
-        );
         if (cancelled) return;
-        if (rRes.status === 410) { setRoomExpired(true); return; }
-        if (!rRes.ok) {
-          const err = new Error('failed to rejoin') as Error & { status?: number };
-          err.status = rRes.status;
-          throw err;
-        }
-        const roomData = await rRes.json();
+        const roomData = await apiRequest<{ players?: { id: string; name: string }[] }>(
+          '/api/rooms/rejoin',
+          { playerToken: session.playerToken },
+        );
         const basePlayers: PlayerResult[] = (roomData.players ?? []).map(
           (p: { id: string; name: string }) => ({ id: p.id, name: p.name, votes: 0, voters: [] })
         );
@@ -189,13 +194,14 @@ export default function Play() {
 
       } catch (error) {
         if (cancelled) return;
-        const status = error instanceof Error ? (error as Error & { status?: number }).status : undefined;
+        const status = error instanceof ApiError ? error.status : undefined;
         if (attempt < 3 && (status === 400 || status === 404 || status === 500 || status === 502 || status === 503 || status === 504 || status === undefined)) {
           await sleep(250 * (attempt + 1));
           await init(attempt + 1);
           return;
         }
-        setError('Lost connection. Refresh and rejoin.');
+        if (error instanceof ApiError && error.status === 410) setRoomExpired(true);
+        else setError(error instanceof ApiError ? error.message : 'Lost connection. Refresh and rejoin.');
       }
     }
 
@@ -204,16 +210,16 @@ export default function Play() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, session]);
+  }, [navigate, session, loadCachedSelection]);
 
-  // countdown tick
+  // Recalculate from the server timestamp so sleeping tabs catch up accurately.
   useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0) return;
-    const id = window.setTimeout(() => {
-      setTimeLeft((t) => (t === null ? null : t - 1));
-    }, 1000);
-    return () => clearTimeout(id);
-  }, [timeLeft]);
+    if (!question || !session?.questionDurationSeconds) return;
+    const tick = () => setTimeLeft(computeTimeLeft(question.startedAt, session.questionDurationSeconds));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [question, session]);
 
   const handleQuestionAdvanced = useCallback(
     (payload: Record<string, unknown>) => {
@@ -275,7 +281,7 @@ export default function Play() {
 
       return next;
     });
-  }, [session?.playerId]);
+  }, []);
 
   const subscriptions = useMemo(
     () => [
@@ -299,7 +305,7 @@ export default function Play() {
         },
       },
     ],
-    [session?.roomId, session?.playerId, handleQuestionAdvanced, navigate, code, applyVoteState]
+    [session?.roomId, handleQuestionAdvanced, navigate, code, applyVoteState]
   );
 
   const handleSocketConnected = useCallback(() => {
@@ -311,7 +317,7 @@ export default function Play() {
     setConnectionStatus(status);
   }, []);
 
-  useSocket(session?.roomId, subscriptions, handleSocketConnected, handleSocketDisconnected);
+  useSocket(session?.roomId, subscriptions, handleSocketConnected, handleSocketDisconnected, session?.playerToken);
 
   async function castVote(playerId: string) {
     if (!session || !question) return;
@@ -337,62 +343,68 @@ export default function Play() {
       }
 
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/votes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Player-Token': session.playerToken },
-        body: JSON.stringify({ questionId, votedForPlayerIds: Array.from(nextSelection) }),
-      });
+      const votes = await apiRequest<Array<{ voterId?: string; voterName?: string; votedForId: string }>>(
+        `/api/rooms/${session.roomId}/votes`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          playerToken: session.playerToken,
+          body: JSON.stringify({ questionId, votedForPlayerIds: Array.from(nextSelection) }),
+        },
+      );
 
       if (requestSeq !== voteRequestSeqRef.current) return;
-      if (!res.ok) {
+      if (!votes) {
         setSelected(previousSelection);
         selectedRef.current = previousSelection;
         if (session.voteMode === 'ANONYMOUS') {
           saveCachedSelection(questionId, previousSelection);
         }
+        setToast('Vote failed. Try again.');
         return;
       }
 
-      const payload = await res.json().catch(() => []);
-      const votes = Array.isArray(payload)
-        ? (payload as Array<{ voterId?: string; voterName?: string; votedForId: string }>)
-        : [];
       applyVoteState(votes);
-    } catch {
+    } catch (error) {
       if (requestSeq === voteRequestSeqRef.current) {
         setSelected(previousSelection);
         selectedRef.current = previousSelection;
         if (session.voteMode === 'ANONYMOUS') {
           saveCachedSelection(questionId, previousSelection);
         }
+        setToast(error instanceof ApiError ? error.message : 'Vote failed. Check your connection and try again.');
       }
     }
   }
 
   async function handleNext() {
     if (!session) return;
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/next-question`,
-      { method: 'POST', headers: { 'X-Player-Token': session.playerToken } }
-    );
-    if (res.status === 204) navigate(`/report-card/${code}`);
+    setNexting(true);
+    try {
+      const nextQuestion = await apiRequest<Record<string, unknown> | undefined>(
+        `/api/rooms/${session.roomId}/game/next-question`,
+        { method: 'POST', playerToken: session.playerToken },
+      );
+      if (!nextQuestion) navigate(`/report-card/${code}`);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'GAME_ALREADY_ENDED') navigate(`/report-card/${code}`);
+      else setToast(error instanceof ApiError ? error.message : 'Could not reach the room. Check your connection and try again.');
+    } finally {
+      setNexting(false);
+    }
   }
 
   async function confirmEndGame() {
     if (!session) return;
     setEndGameError('');
+    setEnding(true);
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/game/end`,
-        { method: 'POST', headers: { 'X-Player-Token': session.playerToken } }
-      );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? "Couldn't end the game.");
-      }
+      await apiRequest(`/api/rooms/${session.roomId}/game/end`, { method: 'POST', playerToken: session.playerToken });
       navigate(`/report-card/${code}`);
     } catch (e) {
-      setEndGameError(e instanceof Error ? e.message : "Couldn't end the game.");
+      setEndGameError(e instanceof ApiError ? e.message : "Couldn't end the game.");
+    } finally {
+      setEnding(false);
     }
   }
 
@@ -425,7 +437,9 @@ export default function Play() {
     return (
       <div className="screen play">
         <div className="play__status-card">
-          <p className="play__status-copy">{error}</p>
+         <p className="play__status-copy">{error}</p>
+          <Button onClick={() => window.location.reload()}>Try again</Button>
+          <Button variant="secondary" onClick={() => navigate("/")}>Back to home</Button>
         </div>
       </div>
     );
@@ -435,7 +449,8 @@ export default function Play() {
     return (
       <div className="screen play">
         <div className="play__status-card">
-          <p className="play__status-copy">Loading…</p>
+         <p className="play__status-copy">Loading…</p>
+          <Loader message="Getting the next question" />
         </div>
       </div>
     );
@@ -464,7 +479,7 @@ export default function Play() {
       <div className="play__meta-row">
         <p className="play__counter">Question {questionIndex} of {totalQuestions}</p>
         {timeLeft !== null && (
-          <span className={`play__timer ${timeLeft <= 0 ? 'play__timer--up' : ''}`}>
+          <span className={`play__timer ${timeLeft <= 0 ? 'play__timer--up' : ''} ${timeLeft > 0 && timeLeft <= 5 ? 'play__timer--urgent' : ''}`} aria-live="polite">
             {timeLeft <= 0 ? "time's up" : `${timeLeft}s`}
           </span>
         )}
@@ -476,9 +491,7 @@ export default function Play() {
         <p className="play__hint">
           <span className="play__live-dot" /> tap as many people as you want
         </p>
-        <p className={`play__connection-status ${connectionStatus === 'reconnecting' ? 'play__connection-status--reconnecting' : ''}`}>
-          {connectionStatus === 'reconnecting' ? 'Reconnecting…' : 'Live sync stable'}
-        </p>
+        <ConnectionBanner status={connectionStatus} />
       </div>
 
       <div className="play__poll">
@@ -492,13 +505,12 @@ export default function Play() {
           const extraVoters = p.voters.length - visibleVoters.length;
 
           return (
-            <div
+            <button
+              type="button"
               key={p.id}
+              aria-pressed={isSelected}
               className={['play__poll-row', isLeading ? 'play__poll-row--leading' : '', isSelected ? 'play__poll-row--selected' : '', isRemovingThis ? 'play__poll-row--removing' : ''].filter(Boolean).join(' ')}
               onClick={() => castVote(p.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && castVote(p.id)}
             >
               <div className="play__poll-top">
                 <span className={`play__poll-radio ${isSelected ? 'play__poll-radio--checked' : ''}`}>
@@ -555,7 +567,7 @@ export default function Play() {
                   </span>
                 </div>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -566,7 +578,7 @@ export default function Play() {
 
       {isHost && (
         <div className="play__footer">
-          <Button fullWidth variant="secondary" onClick={handleNext}>
+         <Button fullWidth variant="secondary" onClick={() => void handleNext()} loading={nexting}>
             Next question →
           </Button>
         </div>
@@ -584,13 +596,14 @@ export default function Play() {
               <Button variant="secondary" fullWidth onClick={() => { setShowEndConfirm(false); setEndGameError(''); }}>
                 Keep playing
               </Button>
-              <Button variant="danger" fullWidth onClick={confirmEndGame}>
+            <Button variant="danger" fullWidth onClick={() => void confirmEndGame()} loading={ending}>
                 End game
               </Button>
             </div>
           </div>
         </div>
       )}
+      {toast && <Toast message={toast} tone={toast.includes('failed') || toast.includes('Couldn') ? 'error' : 'success'} onDismiss={() => setToast('')} />}
     </div>
   );
 }

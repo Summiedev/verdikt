@@ -6,7 +6,10 @@ import Button from "../components/Button";
 import FlameIcon from "../components/icons/FlameIcon";
 import TrophyIcon from "../components/icons/TrophyIcon";
 import { loadSession, clearSession } from "../session";
+import Loader from "../components/Loader";
+import Toast from "../components/Toast";
 import "./ReportCard.css";
+import { apiRequest, ApiError } from "../api/client";
 
 interface PollResultEntry {
   playerId: string;
@@ -68,6 +71,7 @@ export default function ReportCard() {
   const [error, setError] = useState("");
   const [expandedVoters, setExpandedVoters] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
+  const [toast, setToast] = useState("");
 
   const voteMode = session?.voteMode ?? "ANONYMOUS";
   const captureScale = Math.max(2, Math.ceil(window.devicePixelRatio || 2));
@@ -190,19 +194,10 @@ export default function ReportCard() {
       return;
     }
 
-    fetch(
-      `${import.meta.env.VITE_API_URL}/api/rooms/${session.roomId}/report-card`,
-      {
-        headers: { "X-Player-Token": session.playerToken },
-      },
+    apiRequest<ReportCardData>(
+      `/api/rooms/${session.roomId}/report-card`,
+      { playerToken: session.playerToken },
     )
-      .then(async (r) => {
-        if (!r.ok) {
-          const err = await r.json().catch(() => ({}));
-          throw new Error(err.message ?? "Couldn't load the report card.");
-        }
-        return r.json();
-      })
       .then((raw: ReportCardData) => {
         const overview = raw.overview;
       
@@ -229,9 +224,11 @@ for (const card of playerCards)
         setSlides(built);
         setLoading(false);
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         setError(
-          e instanceof Error
+          e instanceof ApiError && e.status === 410
+            ? "This room has closed. Create a new room to get another verdict."
+            : e instanceof Error
             ? e.message
             : "Couldn't load the report card. Try refreshing.",
         );
@@ -337,12 +334,26 @@ for (const card of playerCards)
           text,
           url: window.location.href,
         });
+        setToast("Result shared");
       } catch {
         /* cancelled */
       }
     } else {
-      await navigator.clipboard.writeText(`${text} ${window.location.href}`);
-      alert("Link copied! Share it with your GC.");
+      const shareText = text + ' ' + window.location.href;
+      try {
+        await navigator.clipboard.writeText(shareText);
+      } catch {
+        const helper = document.createElement('textarea');
+        helper.value = shareText;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        helper.remove();
+      }
+      setToast("Share text copied");
     }
   }
 
@@ -410,15 +421,16 @@ for (const card of playerCards)
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       setExporting(false);
-    } catch {
-      setExporting(false);
-      alert('Failed to download slide. Try again.');
-    }
+   } catch {
+     setExporting(false);
+      setToast('Download failed. Try again.');
+   }
   }
 
   if (loading) {
     return (
       <div className="screen reportcard">
+        <Loader message="Building your report card" />
         <p className="reportcard__status">Loading results…</p>
       </div>
     );
@@ -429,6 +441,7 @@ for (const card of playerCards)
       <div className="screen reportcard">
         <div className="reportcard__status-block">
           <p className="reportcard__status">{error}</p>
+          <Button onClick={() => window.location.reload()}>Try again</Button>
           <Button variant="secondary" onClick={handleDone}>
             Back home
           </Button>
@@ -451,13 +464,11 @@ for (const card of playerCards)
         </div>
       )}
       <div className="reportcard__topbar">
-        <div className="reportcard__progress">
-          {slides.map((_, i) => (
-            <span
-              key={i}
-              className={`reportcard__dot ${i <= index ? "reportcard__dot--filled" : ""}`}
-            />
-          ))}
+        <div className="reportcard__progress" role="status" aria-label={`Slide ${index + 1} of ${slides.length}`}>
+          <span className="reportcard__progress-count">{index + 1} / {slides.length}</span>
+          <div className="reportcard__progress-track" aria-hidden="true">
+            <span className="reportcard__progress-fill" style={{ width: `${((index + 1) / slides.length) * 100}%` }} />
+          </div>
         </div>
         <button
           className="reportcard__quick-share"
@@ -627,9 +638,11 @@ for (const card of playerCards)
                           {hasVoters && (
                             <div className="reportcard__voter-section">
                               {/* collapsed: avatar stack + toggle */}
-                              <div
-                                className="reportcard__voter-collapsed"
-                                onClick={(e) => toggleVoters(r.playerId, e)}
+                                <button
+                                  type="button"
+                                  className="reportcard__voter-collapsed"
+                                  onClick={(e) => toggleVoters(r.playerId, e)}
+                                  aria-expanded={isExpanded}
                               >
                                 <div className="reportcard__voter-stack">
                                   {r
@@ -657,7 +670,7 @@ for (const card of playerCards)
                                 <span className="reportcard__voter-toggle">
                                   {isExpanded ? "▲" : "▼"}
                                 </span>
-                              </div>
+                              </button>
 
                               {/* expanded: full name chips */}
                               {isExpanded && (
@@ -780,6 +793,16 @@ for (const card of playerCards)
 
               <div className="reportcard__final-actions">
                 <Button
+                  variant="secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearSession();
+                    navigate("/create");
+                  }}
+                >
+                  Play again
+                </Button>
+                <Button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleShare(slide);
@@ -838,6 +861,7 @@ for (const card of playerCards)
           {isLast ? '✓' : '→'}
         </button>
       </div>
+      {toast && <Toast message={toast} tone={toast.includes('failed') ? 'error' : 'success'} onDismiss={() => setToast('')} />}
     </div>
   );
 }

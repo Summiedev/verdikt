@@ -11,10 +11,10 @@ import java.util.UUID;
 
 @Repository
 public interface RoomQuestionRepository extends JpaRepository<RoomQuestion, UUID> {
-    @EntityGraph(attributePaths = {"question"})
+    @EntityGraph(attributePaths = {"question", "room"})
     List<RoomQuestion> findAllByRoomIdOrderByOrderIndex(UUID roomId);
 
-    @EntityGraph(attributePaths = {"question"})
+    @EntityGraph(attributePaths = {"question", "room"})
     Optional<RoomQuestion> findByRoomIdAndIsActiveTrue(UUID roomId);
 
     int countByRoomId(UUID roomId);

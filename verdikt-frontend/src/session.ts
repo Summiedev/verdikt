@@ -1,3 +1,5 @@
+import { apiRequest } from './api/client';
+
 const KEY = 'verdikt_session';
 
 export interface Session {
@@ -32,21 +34,9 @@ export function loadSession(): Session | null {
 
 export async function refreshSession(playerToken: string): Promise<boolean> {
   try {
-    const res = await fetch('/api/players/refresh', {
-      method: 'POST',
-      headers: {
-        'X-Player-Token': playerToken,
-      },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return data.status === 'ok' || data.errorCode !== 'TOKEN_EXPIRED';
-    }
-
-    return false;
-  } catch (e) {
-    console.error('Session refresh failed', e);
+    await apiRequest('/api/players/refresh', { method: 'POST', playerToken });
+    return true;
+  } catch {
     return false;
   }
 }

@@ -29,4 +29,6 @@ public interface PlayerRepository extends JpaRepository<Player, UUID> {
 
     boolean existsByRoomIdAndName(UUID roomId, String name);
     int countByRoomId(UUID roomId);
+    boolean existsByTokenAndRoomId(UUID token, UUID roomId);
+    long countByIsActiveTrue();
 }

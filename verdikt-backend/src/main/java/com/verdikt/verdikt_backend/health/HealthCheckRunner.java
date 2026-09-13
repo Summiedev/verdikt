@@ -17,13 +17,16 @@ public class HealthCheckRunner {
     private final JdbcTemplate jdbcTemplate;
     private final WebSocketBrokerHealthCheck webSocketBrokerHealthCheck;
     private final JvmMemoryHealthCheck jvmMemoryHealthCheck;
+    private final RedisHealthIndicator redisHealthIndicator;
 
     public HealthCheckRunner(JdbcTemplate jdbcTemplate,
                              WebSocketBrokerHealthCheck webSocketBrokerHealthCheck,
-                             JvmMemoryHealthCheck jvmMemoryHealthCheck) {
+                             JvmMemoryHealthCheck jvmMemoryHealthCheck,
+                             RedisHealthIndicator redisHealthIndicator) {
         this.jdbcTemplate = jdbcTemplate;
         this.webSocketBrokerHealthCheck = webSocketBrokerHealthCheck;
         this.jvmMemoryHealthCheck = jvmMemoryHealthCheck;
+        this.redisHealthIndicator = redisHealthIndicator;
     }
 
     public ResponseEntity<HealthResponse> getHealthResponse(boolean includeDetails) {
@@ -65,6 +68,15 @@ public class HealthCheckRunner {
             components.put("jvm", Map.of("status", jvmStatus.name()));
         }
         if (jvmStatus != HealthStatus.UP) overall = jvmStatus;
+
+        Map<String, Object> redisDetails = checkRedis(includeDetails);
+        HealthStatus redisStatus = (HealthStatus) redisDetails.remove("status");
+        if (includeDetails) {
+            components.put("redis", redisDetails);
+        } else {
+            components.put("redis", Map.of("status", redisStatus.name()));
+        }
+        if (redisStatus != HealthStatus.UP) overall = redisStatus;
 
         HealthResponse response = new HealthResponse(
                 overall.name(),
@@ -137,6 +149,13 @@ public class HealthCheckRunner {
     private Map<String, Object> checkWebSocket(boolean includeDetails) {
         HealthStatus status = webSocketBrokerHealthCheck.check();
         Map<String, Object> result = new HashMap<>(webSocketBrokerHealthCheck.details());
+        result.put("status", status);
+        return result;
+    }
+
+    private Map<String, Object> checkRedis(boolean includeDetails) {
+        HealthStatus status = redisHealthIndicator.check();
+        Map<String, Object> result = new HashMap<>(redisHealthIndicator.details());
         result.put("status", status);
         return result;
     }

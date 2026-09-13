@@ -7,18 +7,18 @@ import com.verdikt.verdikt_backend.model.*;
 import com.verdikt.verdikt_backend.model.enums.RoomStatus;
 import com.verdikt.verdikt_backend.model.enums.VoteMode;
 import com.verdikt.verdikt_backend.repository.*;
+import com.verdikt.verdikt_backend.service.BusinessMetricsService;
 import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +37,7 @@ public class VoteService {
     private final QuestionRepository questionRepository;
     private final RoomQuestionRepository roomQuestionRepository;
     private final WebSocketEventPublisher eventPublisher;
+    private final BusinessMetricsService businessMetricsService;
     // removed EntityManager — flush/clear inside a vote loop was causing unnecessary DB round trips
 
     @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#roomId")
@@ -46,23 +47,22 @@ public class VoteService {
             throw new IllegalArgumentException("Question is required.");
         }
 
-        Room room = roomRepository.findById(roomId)
+        Room room = roomRepository.findByIdForUpdate(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
 
         if (room.getStatus() != RoomStatus.IN_PROGRESS)
             throw new InvalidRoomStateException("Voting is not open right now.");
 
-        Player voter = playerRepository.findByToken(voterToken)
-                .orElseThrow(() -> new PlayerNotFoundException("Player session not found."));
+        Player voter = requireVoterInRoom(voterToken, roomId);
 
         Question question = questionRepository.findById(request.getQuestionId())
-                .orElseThrow(() -> new IllegalArgumentException("Question not found."));
+                .orElseThrow(() -> new InvalidRoomStateException("INVALID_VOTE", "Question not found."));
 
         RoomQuestion roomQuestion = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId)
                 .orElseThrow(() -> new InvalidRoomStateException("No active question right now."));
 
         if (!roomQuestion.getQuestion().getId().equals(question.getId()))
-            throw new InvalidRoomStateException("This question is no longer active.");
+            throw new InvalidRoomStateException("QUESTION_NOT_ACTIVE", "This question is no longer active.");
 
         List<UUID> targetIds = request.getVotedForPlayerIds() == null ? List.of() : request.getVotedForPlayerIds();
         Set<UUID> desiredSelections = new LinkedHashSet<>(targetIds);
@@ -96,7 +96,7 @@ public class VoteService {
                         throw new PlayerNotFoundException("Player doesn't exist.");
                     }
                     if (!votedFor.getRoom().getId().equals(roomId)) {
-                        throw new IllegalArgumentException("Invalid vote target.");
+                        throw new InvalidRoomStateException("INVALID_VOTE", "Invalid vote target.");
                     }
 
                     Vote vote = Vote.builder()
@@ -114,6 +114,8 @@ public class VoteService {
         List<Map<String, Object>> authoritativeState = buildVoteState(currentVotes, room.getVoteMode() == com.verdikt.verdikt_backend.model.enums.VoteMode.PUBLIC);
         eventPublisher.publishVoteState(roomId, question.getId(), authoritativeState, room.getVoteMode());
 
+        businessMetricsService.incrementVotesCast();
+
         log.info("Votes cast: room={} voter={} count={}", room.getCode(), voter.getName(), desiredSelections.size());
         return authoritativeState;
     }
@@ -126,12 +128,21 @@ public class VoteService {
     @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#roomId")
     @Transactional
     public List<Map<String, Object>> removeVote(UUID roomId, UUID voterToken, CastVoteRequest request) {
-        if (request == null || request.getQuestionId() == null) return List.of();
+        if (request == null || request.getQuestionId() == null) {
+            throw new IllegalArgumentException("Question is required.");
+        }
 
-        Room room = roomRepository.findById(roomId)
+        Room room = roomRepository.findByIdForUpdate(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
-        Player voter = playerRepository.findByToken(voterToken)
-                .orElseThrow(() -> new PlayerNotFoundException("Player not found."));
+        if (room.getStatus() != RoomStatus.IN_PROGRESS) {
+            throw new InvalidRoomStateException("GAME_ALREADY_ENDED", "Voting is not open right now.");
+        }
+        Player voter = requireVoterInRoom(voterToken, roomId);
+        RoomQuestion activeQuestion = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId)
+                .orElseThrow(() -> new InvalidRoomStateException("QUESTION_NOT_ACTIVE", "No active question right now."));
+        if (!activeQuestion.getQuestion().getId().equals(request.getQuestionId())) {
+            throw new InvalidRoomStateException("QUESTION_NOT_ACTIVE", "This question is no longer active.");
+        }
 
         List<UUID> targets = request.getVotedForPlayerIds() == null ? List.of() : request.getVotedForPlayerIds();
         if (targets.isEmpty()) {
@@ -152,11 +163,11 @@ public class VoteService {
         return authoritativeState;
     }
 
-    @Cacheable(value = CacheConstants.VOTE_STATE, key = "#roomId")
     @Transactional(readOnly = true)
-    public List<Map<String, String>> getCurrentVoteState(UUID roomId) {
+    public List<Map<String, String>> getCurrentVoteState(UUID roomId, UUID voterToken) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new RoomNotFoundException("Room not found."));
+        requireVoterInRoom(voterToken, roomId);
 
         RoomQuestion active = roomQuestionRepository.findByRoomIdAndIsActiveTrue(roomId).orElse(null);
         if (active == null) return List.of();
@@ -191,5 +202,17 @@ public class VoteService {
             state.add(entry);
         }
         return state;
+    }
+
+    private Player requireVoterInRoom(UUID token, UUID roomId) {
+        if (token == null) {
+            throw new PlayerNotFoundException("Player session not found.");
+        }
+        Player voter = playerRepository.findByTokenAndExpiresAtAfter(token, LocalDateTime.now())
+                .orElseThrow(() -> new PlayerNotFoundException("Player session not found or expired."));
+        if (voter.getRoom() == null || !roomId.equals(voter.getRoom().getId())) {
+            throw new PlayerNotFoundException("Player session does not belong to this room.");
+        }
+        return voter;
     }
 }
