@@ -4,7 +4,7 @@ COPY pom.xml .
 COPY src ./src
 RUN mvn clean package -DskipTests -Dmaven.javadoc.skip=true
 
-FROM eclipse-temurin:21-jre-slim AS runner
+FROM eclipse-temurin:21-jre-jammy AS runner
 RUN groupadd -r verdikt && useradd -r -g verdikt verdikt
 RUN apt-get update && apt-get install -y --no-install-recommends wget curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
