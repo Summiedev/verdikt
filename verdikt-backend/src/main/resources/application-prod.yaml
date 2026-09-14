@@ -2,6 +2,11 @@ spring:
   config:
     activate:
       on-profile: prod
+  # Player tokens are the application's only runtime authentication mechanism.
+  # Do not let Spring Boot create a temporary development user/password in production.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}

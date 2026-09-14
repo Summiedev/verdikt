@@ -142,7 +142,15 @@ jobs:
              cd '$DEPLOY_PATH';
              git pull --ff-only origin main;
              docker compose up -d --build --remove-orphans --wait --wait-timeout 180 ||
-             { docker compose ps; docker compose logs --tail=200 backend frontend; exit 1; };
+             { docker compose ps -a;
+               for container in verdikt-backend verdikt-frontend; do
+                 if docker inspect "$container" >/dev/null 2>&1; then
+                   docker inspect --format='{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container";
+                   docker inspect --format='{{if .State.Health}}{{range .State.Health.Log}}{{printf "health exit=%d output=%s\n" .ExitCode .Output}}{{end}}{{end}}' "$container";
+                 fi;
+               done;
+               docker compose logs --tail=200 backend frontend;
+               exit 1; };
              docker compose ps;
              docker system df"
       - name: Verify production
