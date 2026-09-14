@@ -91,6 +91,7 @@ jobs:
     steps:
       - name: Configure SSH
         env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
@@ -98,6 +99,10 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          if ! ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS does not contain a host key for DEPLOY_HOST. Generate a fresh ssh-keyscan entry and replace the secret."
+            exit 1
+          fi
       - name: Validate deployment settings
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
