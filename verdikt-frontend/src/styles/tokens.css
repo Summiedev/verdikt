@@ -37,8 +37,8 @@
   --gold: var(--color-gold);
   --gold-deep: var(--color-gold-deep);
 
-  --font-display: 'Baloo 2', system-ui, sans-serif;
-  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-display: 'Fredoka', system-ui, sans-serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-md: 1rem;

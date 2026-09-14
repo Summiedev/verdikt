@@ -30,7 +30,9 @@ export default function Home() {
   return (
     <div className="screen home">
       <header className="home__brand">
-        <div className="home__brand-mark">V</div>
+        <div className="home__brand-mark">
+          <img src="/verdikt-mark.svg" alt="" />
+        </div>
         <div>
           <p className="home__brand-kicker">group chat verdicts, upgraded</p>
           <h2 className="home__brand-name">Verdikt</h2>
