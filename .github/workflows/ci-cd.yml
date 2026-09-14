@@ -98,6 +98,24 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Validate deployment settings
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          if [[ -z "$DEPLOY_HOST" || "$DEPLOY_HOST" =~ [[:space:]] ]]; then
+            echo "::error::DEPLOY_HOST must be a hostname or IP without spaces."
+            exit 1
+          fi
+          if [[ -z "$DEPLOY_USER" || ! "$DEPLOY_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::DEPLOY_USER must be the raw Linux username, for example ubuntu. Do not include DEPLOY_USER=, a path, quotes, or spaces."
+            exit 1
+          fi
+          if [[ -z "$DEPLOY_PATH" || "$DEPLOY_PATH" != /* || "$DEPLOY_PATH" =~ $'\n' || "$DEPLOY_PATH" =~ $'\r' ]]; then
+            echo "::error::DEPLOY_PATH must be an absolute VPS path, for example /home/ubuntu/verdikt."
+            exit 1
+          fi
       - name: Pull and restart Docker stack
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
