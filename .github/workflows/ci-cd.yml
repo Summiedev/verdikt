@@ -98,9 +98,14 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          known_hosts="$(printf '%s' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r')"
+          if [[ "$known_hosts" =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+)[[:space:]] ]]; then
+            printf '%s %s\n' "$DEPLOY_HOST" "$known_hosts" > ~/.ssh/known_hosts
+          else
+            printf '%s\n' "$known_hosts" > ~/.ssh/known_hosts
+          fi
           if ! ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null; then
-            echo "::error::DEPLOY_KNOWN_HOSTS does not contain a host key for DEPLOY_HOST. Generate a fresh ssh-keyscan entry and replace the secret."
+            echo "::error::DEPLOY_KNOWN_HOSTS must be either a complete known_hosts line or the raw contents of ssh_host_ed25519_key.pub for DEPLOY_HOST."
             exit 1
           fi
       - name: Validate deployment settings
