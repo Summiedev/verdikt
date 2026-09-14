@@ -1,11 +1,10 @@
 spring:
   application:
     name: verdikt-backend
-
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/verdikt?useTimezone=true&serverTimezone=UTC}
-    username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:summie}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: ${SPRING_DATASOURCE_POOL_MAX_SIZE:25}
@@ -14,11 +13,11 @@ spring:
       max-lifetime: 1200000
       connection-timeout: 10000
       validation-timeout: 5000
-      leak-detection-threshold: 30000
-
   jpa:
     defer-datasource-initialization: false
     open-in-view: false
+    hibernate:
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -27,29 +26,20 @@ spring:
           time_zone: UTC
         default_schema: public
     show-sql: false
-
-  jackson:
-    serialization:
-      write-dates-as-timestamps: false
-    default-property-inclusion: non_null
-    deserialization:
-      fail-on-unknown-properties: false
-
   flyway:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    baseline-version: 1
     validate-on-migrate: true
-
   sql:
     init:
       mode: never
-
   data:
     redis:
       connect-timeout: 2000
       timeout: 2000
-      host: ${SPRING_REDIS_HOST:localhost}
+      host: ${SPRING_REDIS_HOST}
       port: ${SPRING_REDIS_PORT:6379}
       lettuce:
         pool:
@@ -57,7 +47,6 @@ spring:
           max-idle: 10
           min-idle: 2
           max-wait: 1000ms
-
   cache:
     type: redis
     redis:
@@ -69,7 +58,7 @@ spring:
 server:
   shutdown: graceful
   tomcat:
-    max-swallow-size: -1
+    max-swallow-size: 2MB
     threads:
       max: 200
       min-spare: 10
@@ -78,15 +67,14 @@ server:
     include-binding-errors: never
     include-stacktrace: never
 
-spring:
-  lifecycle:
-    timeout-per-shutdown-phase: 30s
+spring.lifecycle:
+  timeout-per-shutdown-phase: 30s
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics,caches,flyway
+        include: health,info,prometheus
       base-path: /actuator
   endpoint:
     health:
@@ -100,17 +88,10 @@ management:
           include: readinessState,db,redis,websocketBroker
   metrics:
     enable:
-      http:
-        server:
-          requests: true
-      jvm:
-        memory: true
-      process:
-        cpu: true
-      system:
-        cpu: true
-      web:
-        sessions: true
+      http.server.requests: true
+      jvm.memory: true
+      process.cpu: true
+      system.cpu: true
       cache: true
       jdbc: true
     export:
@@ -118,14 +99,13 @@ management:
         enabled: true
 
 app:
-  allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,https://verdikt.online,https://www.verdikt.online}
+  allowed-origins: ${APP_ALLOWED_ORIGINS}
   token:
-    secret: ${APP_TOKEN_SECRET:change-me-in-production-use-a-real-secret}
+    secret: ${APP_TOKEN_SECRET}
   rate-limit:
     room-creation-ttl-minutes: 120
     vote-ttl-minutes: 5
     global-capacity: 200
-    global-refill-rate: 200
     global-refill-period: 1
   websocket:
     max-text-message-size: 65536
@@ -138,31 +118,11 @@ logging:
     com.verdikt: INFO
     org.springframework.web: WARN
     org.hibernate.SQL: WARN
-    org.springframework.cache: INFO
-    org.springframework.data.redis: INFO
-    org.springframework.messaging: INFO
+    org.springframework.cache: WARN
+    org.springframework.data.redis: WARN
+    org.springframework.messaging: WARN
     org.springframework.scheduling: INFO
-    org.springframework.transaction: INFO
+    org.springframework.transaction: WARN
     io.lettuce: WARN
     com.zaxxer.hikari: INFO
     org.postgresql: WARN
-
----
-spring:
-  config:
-    activate:
-      on-profile: local
-  sql:
-    init:
-      mode: always
-  jpa:
-    hibernate:
-      ddl-auto: update
-  flyway:
-    enabled: false
-logging:
-  level:
-    root: INFO
-    com.verdikt: DEBUG
-    org.springframework.web: DEBUG
-    org.hibernate.SQL: DEBUG

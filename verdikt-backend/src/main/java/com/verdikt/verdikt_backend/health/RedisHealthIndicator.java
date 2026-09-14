@@ -1,16 +1,18 @@
 package com.verdikt.verdikt_backend.health;
 
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
 @Component
-public class RedisHealthIndicator {
+public class RedisHealthIndicator implements HealthIndicator {
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
-    public RedisHealthIndicator(RedisTemplate<String, Object> redisTemplate) {
+    public RedisHealthIndicator(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
@@ -21,6 +23,13 @@ public class RedisHealthIndicator {
         } catch (Exception ex) {
             return HealthStatus.DOWN;
         }
+    }
+
+    @Override
+    public Health health() {
+        HealthStatus status = check();
+        Health.Builder builder = status == HealthStatus.UP ? Health.up() : Health.down();
+        return builder.withDetails(details()).build();
     }
 
     public Map<String, Object> details() {

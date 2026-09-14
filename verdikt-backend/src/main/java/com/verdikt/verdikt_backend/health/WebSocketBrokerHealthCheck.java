@@ -1,12 +1,14 @@
 package com.verdikt.verdikt_backend.health;
 
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-@Component
-public class WebSocketBrokerHealthCheck {
+@Component("websocketBroker")
+public class WebSocketBrokerHealthCheck implements HealthIndicator {
 
     private final SimpMessagingTemplate messagingTemplate;
 
@@ -19,6 +21,12 @@ public class WebSocketBrokerHealthCheck {
             return HealthStatus.UP;
         }
         return HealthStatus.DOWN;
+    }
+
+    @Override
+    public Health health() {
+        Health.Builder builder = check() == HealthStatus.UP ? Health.up() : Health.down();
+        return builder.withDetails(details()).build();
     }
 
     public Map<String, Object> details() {

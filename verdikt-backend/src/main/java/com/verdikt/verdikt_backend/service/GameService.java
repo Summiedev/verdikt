@@ -21,6 +21,7 @@ import com.verdikt.verdikt_backend.websocket.WebSocketEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
@@ -32,11 +33,11 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.IntStream;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -59,8 +60,10 @@ public class GameService {
         }
     }
 
-    @CacheEvict(value = CacheConstants.NON_CUSTOM_QUESTIONS, key = "'all'")
-    @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#roomId")
+    @Caching(evict = {
+            @CacheEvict(value = CacheConstants.NON_CUSTOM_QUESTIONS, key = "'all'"),
+            @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#roomId")
+    })
     @Transactional
     public void startGame(UUID roomId, UUID hostToken, StartGameRequest request) {
         Room room = roomRepository.findByIdForUpdate(roomId)
@@ -164,8 +167,10 @@ public class GameService {
         return response;
     }
 
-    @CacheEvict(value = CacheConstants.ROOM_BY_CODE, key = "#room.code")
-    @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#room.id")
+    @Caching(evict = {
+            @CacheEvict(value = CacheConstants.ROOM_BY_CODE, key = "#room.code"),
+            @CacheEvict(value = CacheConstants.VOTE_STATE, key = "#room.id")
+    })
     @Transactional
     public void endGame(Room room) {
         room.setStatus(RoomStatus.FINISHED);

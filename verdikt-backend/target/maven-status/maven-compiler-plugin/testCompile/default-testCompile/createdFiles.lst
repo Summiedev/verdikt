@@ -1,2 +1,3 @@
 com\verdikt\verdikt_backend\service\VoteServiceTest.class
 com\verdikt\verdikt_backend\VerdiktBackendApplicationTests.class
+com\verdikt\verdikt_backend\service\GameServiceAuthorizationTest.class

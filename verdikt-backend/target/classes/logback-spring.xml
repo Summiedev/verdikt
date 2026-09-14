@@ -12,19 +12,7 @@
                 <logger>logger</logger>
                 <message>message</message>
                 <stackTrace>stack_trace</stackTrace>
-                <callerData>caller</callerData>
             </fieldNames>
-            <providers>
-                <mdc/>
-                <pattern>
-                    <pattern>
-                        {
-                          "app": "${spring.application.name:-}",
-                          "env": "${APP_ENV:-local}"
-                        }
-                    </pattern>
-                </pattern>
-            </providers>
         </encoder>
     </appender>
 
@@ -32,11 +20,11 @@
         <appender-ref ref="CONSOLE"/>
     </root>
 
-    <logger name="com.verdikt" level="DEBUG"/>
+    <logger name="com.verdikt" level="INFO"/>
 
     <logger name="org.springframework.web" level="INFO"/>
 
-    <logger name="org.hibernate.SQL" level="DEBUG"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
 
     <logger name="org.hibernate.orm.deprecation" level="WARN"/>
 
@@ -65,5 +53,11 @@
     <logger name="org.apache.catalina" level="WARN"/>
 
     <logger name="org.apache.tomcat" level="WARN"/>
+
+    <springProfile name="local">
+        <logger name="com.verdikt" level="DEBUG"/>
+        <logger name="org.springframework.web" level="DEBUG"/>
+        <logger name="org.hibernate.SQL" level="DEBUG"/>
+    </springProfile>
 
 </configuration>

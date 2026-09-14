@@ -6,7 +6,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import com.verdikt.verdikt_backend.model.Room;
 import com.verdikt.verdikt_backend.model.enums.RoomStatus;
 import com.verdikt.verdikt_backend.repository.PlayerRepository;
 import com.verdikt.verdikt_backend.repository.RoomRepository;
@@ -44,13 +43,15 @@ public class BusinessMetricsService {
                 .description("Total games started")
                 .register(meterRegistry);
 
-        Gauge.builder("verdikt.rooms.active")
+        Gauge.builder("verdikt.rooms.active", roomRepository,
+                repo -> repo.countByStatusNot(RoomStatus.EXPIRED))
                 .description("Active rooms not expired")
-                .register(meterRegistry, roomRepository, repo -> repo.countByStatusNot(RoomStatus.EXPIRED));
+                .register(meterRegistry);
 
-        Gauge.builder("verdikt.players.active")
+        Gauge.builder("verdikt.players.active", playerRepository,
+                repo -> repo.countByIsActiveTrue())
                 .description("Active players")
-                .register(meterRegistry, playerRepository, repo -> repo.countByIsActiveTrue());
+                .register(meterRegistry);
     }
 
     public void incrementRoomsCreated() {

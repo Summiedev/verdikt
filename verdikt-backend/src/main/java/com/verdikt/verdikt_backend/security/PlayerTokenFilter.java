@@ -15,7 +15,6 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -74,7 +73,6 @@ public class PlayerTokenFilter extends OncePerRequestFilter {
                     .orElseThrow(() -> new TokenExpiredException("Session not found or expired. Please join again."));
 
             PlayerAuthentication authentication = new PlayerAuthentication(player);
-            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (IllegalArgumentException ex) {
             log.debug("Invalid player token format");

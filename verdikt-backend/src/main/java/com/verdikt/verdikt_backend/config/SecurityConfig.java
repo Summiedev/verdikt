@@ -1,7 +1,6 @@
 package com.verdikt.verdikt_backend.config;
 
 import com.verdikt.verdikt_backend.security.PlayerTokenFilter;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.verdikt.verdikt_backend.dto.response.ApiErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.MDC;
@@ -16,6 +15,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableWebSecurity
@@ -34,8 +34,7 @@ public class SecurityConfig {
             .headers(headers -> headers
                     .xssProtection(xxss -> xxss.headerValue(XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK))
                     .contentSecurityPolicy(csp -> csp
-                            .policyDirectives("default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
-                            .reportOnly(false))
+                            .policyDirectives("default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"))
                     .frameOptions(frame -> frame.deny())
                     .httpStrictTransportSecurity(hsts -> {
                         if ("https".equalsIgnoreCase(environment.getProperty("server.ssl.enabled", "false"))) {
@@ -59,8 +58,8 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/api/rooms").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/rooms/join").permitAll()
                     .requestMatchers("/api/rooms/rejoin").permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/rooms/**/report-card").permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/rooms/**/preview-questions").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/rooms/{roomId}/report-card").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/rooms/{roomId}/preview-questions").permitAll()
                     .requestMatchers("/ws/**").permitAll()
                     .requestMatchers(HttpMethod.GET, "/actuator/health/liveness").permitAll()
                     .requestMatchers(HttpMethod.GET, "/actuator/info").permitAll()

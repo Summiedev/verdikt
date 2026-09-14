@@ -12,19 +12,7 @@
                 <logger>logger</logger>
                 <message>message</message>
                 <stackTrace>stack_trace</stackTrace>
-                <callerData>caller</callerData>
             </fieldNames>
-            <providers>
-                <mdc/>
-                <pattern>
-                    <pattern>
-                        {
-                          "app": "${spring.application.name:-}",
-                          "env": "${APP_ENV:-local}"
-                        }
-                    </pattern>
-                </pattern>
-            </providers>
         </encoder>
     </appender>
 
