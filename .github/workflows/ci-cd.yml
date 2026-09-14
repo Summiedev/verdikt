@@ -62,6 +62,7 @@ jobs:
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/verdikt
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ci-password-1234
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
       SPRING_REDIS_HOST: localhost
       APP_ALLOWED_ORIGINS: http://localhost:5173
       APP_TOKEN_SECRET: ci-only-token-secret-that-is-long-enough
