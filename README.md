@@ -8,15 +8,23 @@ A real-time multiplayer polling game where your friend group settles disputes, d
 
 ## Screenshots
 
-These are the current app screens from the latest build:
+Captured from a complete local create-room → lobby → live-voting → results walkthrough. Recreate them with:
+
+```bash
+node readme-assets/capture.mjs
+```
+
+The script runs the real Vite UI against deterministic local fixture responses, so no external database or service is changed.
 
 ![Verdikt home screen](readme-assets/verdikt-1.png)
 
-![Verdikt lobby screen](readme-assets/verdikt-2.png)
+![Verdikt room setup](readme-assets/verdikt-2.png)
 
-![Verdikt voting screen](readme-assets/verdikt-3.png)
+![Verdikt room lobby and invite link](readme-assets/verdikt-3.png)
 
-![Verdikt results screen](readme-assets/verdikt-4.png)
+![Verdikt live voting screen](readme-assets/verdikt-4.png)
+
+![Verdikt results screen](readme-assets/verdikt-5.png)
 
 ### Key Features
 
