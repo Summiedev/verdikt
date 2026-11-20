@@ -32,7 +32,10 @@ interface RoomData {
 export default function Lobby() {
   const { code } = useParams();
   const navigate = useNavigate();
-const [session] = useState(() => loadSession());
+  const [session] = useState(() => loadSession());
+  const inviteUrl = code
+    ? new URL(`/join?code=${encodeURIComponent(code)}`, window.location.origin).toString()
+    : new URL('/join', window.location.origin).toString();
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [copied, setCopied] = useState(false);
@@ -177,25 +180,46 @@ const [session] = useState(() => loadSession());
 
   async function copyValue(value: string, message: string) {
     try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API is unavailable.');
       await navigator.clipboard.writeText(value);
     } catch {
+      const previouslyFocused = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
       const helper = document.createElement('textarea');
       helper.value = value;
       helper.setAttribute('readonly', '');
       helper.style.position = 'fixed';
+      helper.style.left = '-9999px';
       helper.style.opacity = '0';
+      helper.setAttribute('aria-hidden', 'true');
+      helper.tabIndex = -1;
       document.body.appendChild(helper);
-      helper.select();
-      document.execCommand('copy');
-      helper.remove();
+      let copied = false;
+      try {
+        helper.select();
+        copied = document.execCommand('copy');
+      } catch {
+        // Keep the fallback result false if the legacy copy command throws.
+      } finally {
+        helper.remove();
+        previouslyFocused?.focus({ preventScroll: true });
+      }
+      if (!copied) {
+        setToast('Copy failed. Select the text and copy it manually.');
+        return false;
+      }
     }
     setToast(message);
+    return true;
   }
 
   async function copyLink() {
-    await copyValue(window.location.origin + '/join?code=' + code, 'Invite link copied');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    const copiedLink = await copyValue(inviteUrl, 'Invite link copied');
+    if (copiedLink) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    }
   }
 
   async function copyCode() {
@@ -203,18 +227,21 @@ const [session] = useState(() => loadSession());
   }
 
   async function shareInvite() {
-    if (!navigator.share) { await copyLink(); return; }
+    if (typeof navigator.share !== 'function') { await copyLink(); return; }
     try {
-      await navigator.share({ title: 'Join my Verdikt room', text: 'Join my Verdikt room with code ' + code, url: window.location.origin + '/join?code=' + code });
+      await navigator.share({ title: 'Join my Verdikt room', text: 'Join my Verdikt room with code ' + code, url: inviteUrl });
       setToast('Invite ready to share');
-    } catch { /* The user dismissed native sharing. */ }
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === 'AbortError') return;
+      await copyLink();
+    }
   }
 
   // FIX 1 (host controls): use activePlayers for the start button count
   const activePlayers = players.filter((p) => p.isActive);
   const hostName = players.find((player) => player.isHost)?.name ?? 'the host';
   const requestedQuestionCount = Number(session?.questionCount ?? 10);
-  const canNativeShare = typeof navigator !== 'undefined' && 'share' in navigator;
+  const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   const timerLabel = session?.questionDurationSeconds
     ? `${session.questionDurationSeconds}s per question`
     : 'no timer';
@@ -239,12 +266,16 @@ const [session] = useState(() => loadSession());
       <div className="lobby__header">
         <p className="lobby__eyebrow">Room code</p>
         <h1 className="lobby__code">{code}</h1>
-        <div className="lobby__share-actions">
-          <button className="lobby__copy" onClick={() => void copyLink()} type="button">
+        <div className="lobby__invite-link">
+          <p className="lobby__invite-label">Invite link</p>
+          <a className="lobby__invite-url" href={inviteUrl}>{inviteUrl}</a>
+        </div>
+        <div className="lobby__share-actions" role="group" aria-label="Invite friends">
+          <button className="lobby__copy" onClick={() => void copyLink()} type="button" aria-label={copied ? 'Invite link copied' : 'Copy invite link'}>
             {copied ? 'Copied!' : 'Copy link'}
           </button>
-          {canNativeShare && <button className="lobby__share-button" onClick={() => void shareInvite()} type="button">Share</button>}
-          <button className="lobby__share-button" onClick={() => void copyCode()} type="button">Copy code</button>
+          {canNativeShare && <button className="lobby__share-button" onClick={() => void shareInvite()} type="button" aria-label="Share invite link">Share</button>}
+          <button className="lobby__share-button" onClick={() => void copyCode()} type="button" aria-label="Copy room code">Copy code</button>
         </div>
         <ConnectionBanner status={connectionStatus} />
       </div>

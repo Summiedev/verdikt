@@ -2,6 +2,10 @@
 .lobby__header { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding-block: var(--space-4); text-align: center; }
 .lobby__eyebrow { margin: 0; color: var(--color-text-secondary); font-size: var(--text-xs); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
 .lobby__code { margin: 0; color: var(--color-action-strong); font-family: var(--font-display); font-size: clamp(3rem, 15vw, 4.5rem); font-weight: 800; letter-spacing: 0.12em; line-height: 0.95; }
+.lobby__invite-link { width: min(100%, 36rem); }
+.lobby__invite-label { margin: 0 0 var(--space-1); color: var(--color-text-muted); font-size: var(--text-xs); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.lobby__invite-url { display: block; color: var(--color-action-strong); font-size: var(--text-sm); line-height: var(--leading-body); overflow-wrap: anywhere; text-underline-offset: 0.2em; }
+.lobby__invite-url:focus-visible { border-radius: 0.2rem; outline: 3px solid var(--color-focus); outline-offset: 3px; }
 .lobby__copy { min-height: 44px; padding: 0.6rem 1rem; border: 1px solid var(--color-accent); border-radius: var(--r-pill); background: var(--color-accent-soft); color: var(--color-accent); font-size: var(--text-sm); font-weight: 800; cursor: pointer; transition: background var(--duration-fast) ease, color var(--duration-fast) ease; }
 .lobby__copy:hover { background: var(--color-accent); color: var(--color-white); }
 .lobby__share-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
